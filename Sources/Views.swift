@@ -320,6 +320,8 @@ struct SettingsView: View {
     @State private var detectAlertMessage = ""
     @State private var draggedAccount: AccountConfig? = nil
     
+    @FocusState private var isThresholdFocused: Bool
+    
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedAccountId) {
@@ -444,6 +446,7 @@ struct SettingsView: View {
                                             }
                                         }
                                     ))
+                                    .focused($isThresholdFocused)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 50)
                                     .multilineTextAlignment(.trailing)
@@ -489,6 +492,16 @@ struct SettingsView: View {
                     }
                     .formStyle(.grouped)
                     .padding(.vertical, 8)
+                    .onAppear {
+                        DispatchQueue.main.async {
+                            isThresholdFocused = false
+                        }
+                    }
+                    .onChange(of: selectedAccountId) {
+                        DispatchQueue.main.async {
+                            isThresholdFocused = false
+                        }
+                    }
                 } else if let selectedId = selectedAccountId,
                           let account = monitor.config.accounts.first(where: { $0.id == selectedId }) {
                     
