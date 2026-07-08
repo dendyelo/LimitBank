@@ -51,18 +51,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Account cards
         for account in monitor.config.accounts {
-            let status = monitor.statuses[account.id] ?? QuotaStatus(id: account.id)
-            let isSelected = monitor.config.selectedAccountId == account.id
-            
             let item = NSMenuItem()
             let hostingView = NSHostingView(rootView:
-                AccountRowView(
-                    account: account,
-                    status: status,
-                    isSelected: isSelected,
+                MenuAccountRowView(
+                    accountId: account.id,
                     onSelect: { [weak self] in
                         self?.monitor.selectAccount(id: account.id)
-                        self?.menu.cancelTracking()
                     }
                 )
                 .frame(width: 306)

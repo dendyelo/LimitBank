@@ -40,6 +40,26 @@ struct PopoverView: View {
     }
 }
 
+struct MenuAccountRowView: View {
+    @ObservedObject var monitor = QuotaMonitor.shared
+    let accountId: String
+    let onSelect: () -> Void
+    
+    var body: some View {
+        if let account = monitor.config.accounts.first(where: { $0.id == accountId }) {
+            let status = monitor.statuses[accountId] ?? QuotaStatus(id: accountId)
+            let isSelected = monitor.config.selectedAccountId == accountId
+            
+            AccountRowView(
+                account: account,
+                status: status,
+                isSelected: isSelected,
+                onSelect: onSelect
+            )
+        }
+    }
+}
+
 struct AccountRowView: View {
     let account: AccountConfig
     let status: QuotaStatus
@@ -78,7 +98,7 @@ struct AccountRowView: View {
                 
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(.secondary)
                         .font(.system(size: 14))
                 }
             }
@@ -197,11 +217,11 @@ struct AccountRowView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.015))
+                .fill(isSelected ? Color.primary.opacity(0.06) : Color.primary.opacity(0.015))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.05), lineWidth: isSelected ? 1.5 : 1)
+                .stroke(isSelected ? Color.primary.opacity(0.3) : Color.primary.opacity(0.05), lineWidth: isSelected ? 1.5 : 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
