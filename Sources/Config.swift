@@ -34,12 +34,14 @@ public struct AppConfig: Codable {
     public var selectedAccountId: String?
     public var refreshInterval: Int? // in seconds
     public var menuBarStyle: String? // "bars", "percentage", "both"
+    public var notificationsEnabled: Bool?
     
-    public init(accounts: [AccountConfig] = [], selectedAccountId: String? = nil, refreshInterval: Int? = 60, menuBarStyle: String? = "bars") {
+    public init(accounts: [AccountConfig] = [], selectedAccountId: String? = nil, refreshInterval: Int? = 60, menuBarStyle: String? = "bars", notificationsEnabled: Bool? = true) {
         self.accounts = accounts
         self.selectedAccountId = selectedAccountId
         self.refreshInterval = refreshInterval
         self.menuBarStyle = menuBarStyle
+        self.notificationsEnabled = notificationsEnabled
     }
 }
 

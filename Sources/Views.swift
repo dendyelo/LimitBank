@@ -420,6 +420,11 @@ struct SettingsView: View {
                                 set: { LaunchAtLoginManager.shared.setEnabled($0) }
                             ))
                             
+                            Toggle("Low Quota Alerts", isOn: Binding(
+                                get: { monitor.config.notificationsEnabled ?? true },
+                                set: { monitor.updateNotificationsEnabled($0) }
+                            ))
+                            
                             Picker("Auto-Refresh Interval", selection: Binding(
                                 get: { monitor.config.refreshInterval ?? 60 },
                                 set: { monitor.updateRefreshInterval($0) }
