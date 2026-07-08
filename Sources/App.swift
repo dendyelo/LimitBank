@@ -1,6 +1,5 @@
 import Cocoa
 import SwiftUI
-import UserNotifications
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,13 +11,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         // Hide dock icon
         NSApp.setActivationPolicy(.accessory)
-        
-        // Request Notification Permission
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error = error {
-                AppLogger.log("Notification authorization failed: \(error.localizedDescription)")
-            }
-        }
         
         // Setup status item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

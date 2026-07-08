@@ -1,7 +1,6 @@
 import Foundation
 import Combine
 import SwiftUI
-import UserNotifications
 
 @MainActor
 public class QuotaMonitor: ObservableObject {
@@ -11,9 +10,6 @@ public class QuotaMonitor: ObservableObject {
     @Published public var statuses: [String: QuotaStatus] = [:]
     @Published public var isRefreshing = false
     @Published public var lastRefreshedAt: Date? = nil
-    
-    private var notifiedAccounts: [String: Date] = [:]
-    private var lastNotificationTime: [String: Date] = [:]
     
     private var timer: AnyCancellable?
     
@@ -142,11 +138,6 @@ public class QuotaMonitor: ObservableObject {
                     updatedConfigs.append(updated)
                     configChanged = true
                 }
-                
-                // Trigger notification check
-                if let acc = self.config.accounts.first(where: { $0.id == status.id }) {
-                    self.checkNotifications(for: acc, status: status)
-                }
             }
         }
         
@@ -230,16 +221,6 @@ public class QuotaMonitor: ObservableObject {
         onIconUpdate?()
     }
     
-    public func updateNotificationsEnabled(_ enabled: Bool) {
-        config.notificationsEnabled = enabled
-        ConfigManager.shared.save(config)
-    }
-    
-    public func updateNotificationThreshold(_ threshold: Int) {
-        config.notificationThreshold = threshold
-        ConfigManager.shared.save(config)
-    }
-    
     public func updateRefreshInterval(_ interval: Int) {
         config.refreshInterval = interval
         ConfigManager.shared.save(config)
@@ -282,76 +263,6 @@ public class QuotaMonitor: ObservableObject {
             ConfigManager.shared.save(config)
             Task {
                 await refreshAll()
-            }
-        }
-    }
-    
-    private func checkNotifications(for account: AccountConfig, status: QuotaStatus) {
-        guard config.notificationsEnabled ?? true else { return }
-        guard status.error == nil else { return }
-        
-        let remainingThreshold = Double(config.notificationThreshold ?? 15)
-        let threshold = 100.0 - remainingThreshold // e.g. 100 - 15 = 85% used threshold
-        var shouldNotify = false
-        var message = ""
-        var currentResetAt: Date? = nil
-        
-        if account.type == "codex" {
-            if let used = status.hoursUsedPercent, used >= threshold {
-                shouldNotify = true
-                currentResetAt = status.hoursResetAt
-                let remaining = max(0, 100 - used)
-                message = "Your Codex 5H limit is running low (\(String(format: "%.0f%%", remaining)) remaining)."
-            }
-        } else {
-            // Antigravity
-            let geminiH = status.geminiHoursUsedPercent
-            let thirdPartyH = status.thirdPartyHoursUsedPercent
-            
-            if let g = geminiH, g >= threshold {
-                shouldNotify = true
-                currentResetAt = status.geminiHoursResetAt
-                let remaining = max(0, 100 - g)
-                message = "Your Antigravity Gemini limit is running low (\(String(format: "%.0f%%", remaining)) remaining)."
-            } else if let t = thirdPartyH, t >= threshold {
-                shouldNotify = true
-                currentResetAt = status.thirdPartyHoursResetAt
-                let remaining = max(0, 100 - t)
-                message = "Your Antigravity Claude/GPT limit is running low (\(String(format: "%.0f%%", remaining)) remaining)."
-            }
-        }
-        
-        if shouldNotify {
-            let key = account.id
-            if let resetDate = currentResetAt {
-                if notifiedAccounts[key] == resetDate {
-                    return // Already notified for this window
-                }
-                notifiedAccounts[key] = resetDate
-            } else {
-                // No reset date, enforce a 6-hour cooldown
-                if let lastNotified = lastNotificationTime[key], Date().timeIntervalSince(lastNotified) < 21600 {
-                    return
-                }
-                lastNotificationTime[key] = Date()
-            }
-            
-            sendLocalNotification(title: "Low Quota Alert", body: "\(account.displayName): \(message)")
-        }
-    }
-    
-    private func sendLocalNotification(title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-        
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                AppLogger.log("Failed to deliver notification: \(error.localizedDescription)")
             }
         }
     }

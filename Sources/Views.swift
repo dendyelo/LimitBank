@@ -346,8 +346,6 @@ struct SettingsView: View {
     @State private var detectAlertMessage = ""
     @State private var draggedAccount: AccountConfig? = nil
     
-    @FocusState private var isThresholdFocused: Bool
-    
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedAccountId) {
@@ -448,39 +446,6 @@ struct SettingsView: View {
                                 set: { LaunchAtLoginManager.shared.setEnabled($0) }
                             ))
                             
-                            Toggle("Low Quota Alerts", isOn: Binding(
-                                get: { monitor.config.notificationsEnabled ?? true },
-                                set: { monitor.updateNotificationsEnabled($0) }
-                            ))
-                            
-                            if monitor.config.notificationsEnabled ?? true {
-                                HStack {
-                                    Text("Alert Threshold")
-                                    Spacer()
-                                    TextField("", text: Binding(
-                                        get: { 
-                                            let current = monitor.config.notificationThreshold ?? 15
-                                            return current == 0 ? "" : String(current)
-                                        },
-                                        set: { newValue in
-                                            let filtered = newValue.filter { $0.isNumber }
-                                            if let val = Int(filtered) {
-                                                let clamped = max(1, min(99, val))
-                                                monitor.updateNotificationThreshold(clamped)
-                                            } else if filtered.isEmpty {
-                                                monitor.updateNotificationThreshold(0)
-                                            }
-                                        }
-                                    ))
-                                    .focused($isThresholdFocused)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 50)
-                                    .multilineTextAlignment(.trailing)
-                                    Text("% Remaining")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
                             Picker("Auto-Refresh Interval", selection: Binding(
                                 get: { monitor.config.refreshInterval ?? 60 },
                                 set: { monitor.updateRefreshInterval($0) }
@@ -518,16 +483,6 @@ struct SettingsView: View {
                     }
                     .formStyle(.grouped)
                     .padding(.vertical, 8)
-                    .onAppear {
-                        DispatchQueue.main.async {
-                            isThresholdFocused = false
-                        }
-                    }
-                    .onChange(of: selectedAccountId) {
-                        DispatchQueue.main.async {
-                            isThresholdFocused = false
-                        }
-                    }
                 } else if let selectedId = selectedAccountId,
                           let account = monitor.config.accounts.first(where: { $0.id == selectedId }) {
                     
