@@ -426,16 +426,29 @@ struct SettingsView: View {
                             ))
                             
                             if monitor.config.notificationsEnabled ?? true {
-                                Picker("Alert Threshold", selection: Binding(
-                                    get: { monitor.config.notificationThreshold ?? 15 },
-                                    set: { monitor.updateNotificationThreshold($0) }
-                                )) {
-                                    Text("5% Remaining").tag(5)
-                                    Text("10% Remaining").tag(10)
-                                    Text("15% Remaining").tag(15)
-                                    Text("20% Remaining").tag(20)
-                                    Text("25% Remaining").tag(25)
-                                    Text("30% Remaining").tag(30)
+                                HStack {
+                                    Text("Alert Threshold")
+                                    Spacer()
+                                    TextField("", text: Binding(
+                                        get: { 
+                                            let current = monitor.config.notificationThreshold ?? 15
+                                            return current == 0 ? "" : String(current)
+                                        },
+                                        set: { newValue in
+                                            let filtered = newValue.filter { $0.isNumber }
+                                            if let val = Int(filtered) {
+                                                let clamped = max(1, min(99, val))
+                                                monitor.updateNotificationThreshold(clamped)
+                                            } else if filtered.isEmpty {
+                                                monitor.updateNotificationThreshold(0)
+                                            }
+                                        }
+                                    ))
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 50)
+                                    .multilineTextAlignment(.trailing)
+                                    Text("% Remaining")
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             
