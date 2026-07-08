@@ -75,6 +75,12 @@ struct AccountRowView: View {
                 }
                 
                 Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 14))
+                }
             }
             
             if let error = status.error {
@@ -191,11 +197,11 @@ struct AccountRowView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.primary.opacity(isSelected ? 0.04 : 0.015))
+                .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.015))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.05), lineWidth: 1)
+                .stroke(isSelected ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.05), lineWidth: isSelected ? 1.5 : 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
