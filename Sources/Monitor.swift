@@ -235,6 +235,11 @@ public class QuotaMonitor: ObservableObject {
         ConfigManager.shared.save(config)
     }
     
+    public func updateNotificationThreshold(_ threshold: Int) {
+        config.notificationThreshold = threshold
+        ConfigManager.shared.save(config)
+    }
+    
     public func updateRefreshInterval(_ interval: Int) {
         config.refreshInterval = interval
         ConfigManager.shared.save(config)
@@ -285,7 +290,8 @@ public class QuotaMonitor: ObservableObject {
         guard config.notificationsEnabled ?? true else { return }
         guard status.error == nil else { return }
         
-        let threshold = 85.0 // Notify when usage is >= 85% (less than 15% remaining)
+        let remainingThreshold = Double(config.notificationThreshold ?? 15)
+        let threshold = 100.0 - remainingThreshold // e.g. 100 - 15 = 85% used threshold
         var shouldNotify = false
         var message = ""
         var currentResetAt: Date? = nil

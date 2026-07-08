@@ -425,6 +425,20 @@ struct SettingsView: View {
                                 set: { monitor.updateNotificationsEnabled($0) }
                             ))
                             
+                            if monitor.config.notificationsEnabled ?? true {
+                                Picker("Alert Threshold", selection: Binding(
+                                    get: { monitor.config.notificationThreshold ?? 15 },
+                                    set: { monitor.updateNotificationThreshold($0) }
+                                )) {
+                                    Text("5% Remaining").tag(5)
+                                    Text("10% Remaining").tag(10)
+                                    Text("15% Remaining").tag(15)
+                                    Text("20% Remaining").tag(20)
+                                    Text("25% Remaining").tag(25)
+                                    Text("30% Remaining").tag(30)
+                                }
+                            }
+                            
                             Picker("Auto-Refresh Interval", selection: Binding(
                                 get: { monitor.config.refreshInterval ?? 60 },
                                 set: { monitor.updateRefreshInterval($0) }

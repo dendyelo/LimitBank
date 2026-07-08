@@ -35,13 +35,15 @@ public struct AppConfig: Codable {
     public var refreshInterval: Int? // in seconds
     public var menuBarStyle: String? // "bars", "percentage", "both"
     public var notificationsEnabled: Bool?
+    public var notificationThreshold: Int? // remaining percentage, e.g. 15 for 15%
     
-    public init(accounts: [AccountConfig] = [], selectedAccountId: String? = nil, refreshInterval: Int? = 60, menuBarStyle: String? = "bars", notificationsEnabled: Bool? = true) {
+    public init(accounts: [AccountConfig] = [], selectedAccountId: String? = nil, refreshInterval: Int? = 60, menuBarStyle: String? = "bars", notificationsEnabled: Bool? = true, notificationThreshold: Int? = 15) {
         self.accounts = accounts
         self.selectedAccountId = selectedAccountId
         self.refreshInterval = refreshInterval
         self.menuBarStyle = menuBarStyle
         self.notificationsEnabled = notificationsEnabled
+        self.notificationThreshold = notificationThreshold
     }
 }
 
