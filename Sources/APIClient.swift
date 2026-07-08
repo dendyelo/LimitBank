@@ -54,6 +54,9 @@ public struct QuotaStatus: Identifiable, Codable {
 public class APIClient {
     public static let shared = APIClient()
     
+    private var activeRefreshes = Set<String>()
+    private let refreshQueue = DispatchQueue(label: "com.limitbank.apiclient")
+    
     private let googleClientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
     private let googleClientSecret = "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"
     private let codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -63,6 +66,24 @@ public class APIClient {
     /// Checks and refreshes tokens if necessary, then fetches the current quota.
     /// Returns the quota status and any updated account config (e.g. rotated refresh token).
     public func fetchQuota(for account: AccountConfig) async -> (QuotaStatus, AccountConfig?) {
+        let isAlreadyRefreshing = refreshQueue.sync {
+            if activeRefreshes.contains(account.id) {
+                return true
+            }
+            activeRefreshes.insert(account.id)
+            return false
+        }
+        
+        if isAlreadyRefreshing {
+            return (QuotaStatus(id: account.id, error: "Auth: Refresh in progress"), nil)
+        }
+        
+        defer {
+            refreshQueue.sync {
+                _ = activeRefreshes.remove(account.id)
+            }
+        }
+        
         var activeAccount = account
         var configUpdated = false
         
@@ -100,6 +121,7 @@ public class APIClient {
                         }
                         configUpdated = true
                         AppLogger.log("Successfully refreshed Codex OpenAI token (rotated) for: \(account.label)")
+                        syncRotatedTokensToSystemFiles(activeAccount)
                     } catch {
                         return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed: \(error.localizedDescription)"), nil)
                     }
@@ -636,5 +658,47 @@ public class APIClient {
         }
         
         return nil
+    }
+    
+    private func syncRotatedTokensToSystemFiles(_ account: AccountConfig) {
+        guard account.type == "codex" else { return }
+        
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let authURL = home.appendingPathComponent(".codex/auth.json")
+        
+        guard FileManager.default.fileExists(atPath: authURL.path),
+              let data = try? Data(contentsOf: authURL) else { return }
+              
+        struct CodexAuthTokens: Codable {
+            let access_token: String?
+            let refresh_token: String?
+            let id_token: String?
+            let account_id: String?
+        }
+        struct CodexAuth: Codable {
+            var tokens: CodexAuthTokens?
+        }
+        
+        guard var auth = try? JSONDecoder().decode(CodexAuth.self, from: data),
+              let tokens = auth.tokens,
+              let idToken = tokens.id_token,
+              let systemEmail = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") else { return }
+              
+        if systemEmail.lowercased() == account.email?.lowercased() {
+            let updatedTokens = CodexAuthTokens(
+                access_token: account.accessToken,
+                refresh_token: account.refreshToken,
+                id_token: tokens.id_token,
+                account_id: tokens.account_id
+            )
+            auth.tokens = updatedTokens
+            
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            if let encodedData = try? encoder.encode(auth) {
+                try? encodedData.write(to: authURL, options: .atomic)
+                AppLogger.log("Synchronized rotated Codex tokens back to ~/.codex/auth.json")
+            }
+        }
     }
 }
