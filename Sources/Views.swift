@@ -1,0 +1,655 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct PopoverView: View {
+    @StateObject private var monitor = QuotaMonitor.shared
+    @State private var draggedAccount: AccountConfig? = nil
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(monitor.config.accounts) { account in
+                        let status = monitor.statuses[account.id] ?? QuotaStatus(id: account.id)
+                        let isSelected = monitor.config.selectedAccountId == account.id
+                        
+                        AccountRowView(
+                            account: account,
+                            status: status,
+                            isSelected: isSelected,
+                            onSelect: {
+                                monitor.selectAccount(id: account.id)
+                            }
+                        )
+                        .onDrag {
+                            self.draggedAccount = account
+                            return NSItemProvider(object: account.id as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: AccountDropDelegate(
+                            item: account,
+                            draggedItem: $draggedAccount,
+                            monitor: monitor
+                        ))
+                    }
+                }
+                .padding(12)
+            }
+            .frame(maxHeight: 650)
+        }
+        .background(Color.clear)
+    }
+}
+
+struct AccountRowView: View {
+    let account: AccountConfig
+    let status: QuotaStatus
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(account.displayName)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: statusColor.opacity(0.5), radius: 2)
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Text(account.type == "codex" ? "Codex" : "Antigravity")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.8))
+                        Text("·")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.4))
+                        Text(status.plan ?? "—")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary.opacity(0.8))
+                    }
+                }
+                
+                Spacer()
+            }
+            
+            if let error = status.error {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 11))
+                        .foregroundColor(.red.opacity(0.8))
+                    Text(error.contains("Unauthorized") ? "UNAUTHORIZED" : error.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .padding(.top, 2)
+            } else if account.type == "antigravity" {
+                // Antigravity: separate Gemini and Claude/GPT sections
+                VStack(spacing: 10) {
+                    // Gemini Models
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Gemini")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
+                        QuotaBarView(
+                            icon: "clock",
+                            label: "5H",
+                            usedPercent: status.geminiHoursUsedPercent,
+                            resetAt: status.geminiHoursResetAt
+                        )
+                        
+                        QuotaBarView(
+                            icon: "calendar",
+                            label: "WK",
+                            usedPercent: status.geminiWeeklyUsedPercent,
+                            resetAt: status.geminiWeeklyResetAt
+                        )
+                    }
+                    
+                    // Claude & GPT Models
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Claude / GPT")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
+                        QuotaBarView(
+                            icon: "clock",
+                            label: "5H",
+                            usedPercent: status.thirdPartyHoursUsedPercent,
+                            resetAt: status.thirdPartyHoursResetAt
+                        )
+                        
+                        QuotaBarView(
+                            icon: "calendar",
+                            label: "WK",
+                            usedPercent: status.thirdPartyWeeklyUsedPercent,
+                            resetAt: status.thirdPartyWeeklyResetAt
+                        )
+                    }
+                }
+            } else {
+                // Codex: single combined view
+                VStack(spacing: 8) {
+                    QuotaBarView(
+                        icon: "clock",
+                        label: "5H",
+                        usedPercent: status.hoursUsedPercent,
+                        resetAt: status.hoursResetAt
+                    )
+                    
+                    QuotaBarView(
+                        icon: "calendar",
+                        label: "WK",
+                        usedPercent: status.weeklyUsedPercent,
+                        resetAt: status.weeklyResetAt
+                    )
+                    
+                    if let credits = status.credits {
+                        HStack(spacing: 6) {
+                            Image(systemName: "dollarsign.circle")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            Text("CREDIT")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "$%.2f", credits))
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.top, 2)
+                    }
+                    
+                    if let resets = status.codexResetCreditsCount, resets > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "ticket")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Text("LIMIT RESETS")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(resets) available")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.primary)
+                            if let expiry = status.codexResetCreditsExpiry {
+                                Text("(exp \(QuotaBarView.timeRemaining(from: expiry) ?? ""))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary.opacity(0.8))
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(isSelected ? 0.04 : 0.015))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.05), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
+    }
+    
+    private var statusColor: Color {
+        if status.error != nil {
+            return .red
+        } else if status.hoursUsedPercent == nil {
+            return .gray
+        } else {
+            return .emerald
+        }
+    }
+}
+
+struct QuotaBarView: View {
+    let icon: String
+    let label: String
+    let usedPercent: Double?
+    let resetAt: Date?
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Text(label)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 38, alignment: .leading)
+            
+            // Thin progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(height: 5)
+                    
+                    if let used = usedPercent {
+                        let remaining = max(0.0, 100.0 - used)
+                        RoundedRectangle(cornerRadius: 2.5)
+                            .fill(Color.primary.opacity(0.65))
+                            .frame(width: geo.size.width * CGFloat(remaining / 100.0), height: 5)
+                    }
+                }
+            }
+            .frame(height: 5)
+            
+            // Value & Reset Timer
+            HStack(spacing: 4) {
+                if let used = usedPercent {
+                    let remaining = max(0.0, 100.0 - used)
+                    Text(String(format: "%.0f%%", remaining))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    if let resetStr = QuotaBarView.timeRemaining(from: resetAt), !resetStr.isEmpty {
+                        Text("• \(resetStr)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary.opacity(0.7))
+                    }
+                } else {
+                    Text("NO DATA")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary.opacity(0.5))
+                }
+            }
+        }
+    }
+    
+    static func timeRemaining(from date: Date?) -> String? {
+        guard let date = date else { return nil }
+        let seconds = Int(date.timeIntervalSinceNow)
+        if seconds <= 0 {
+            return "reset"
+        }
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        if hours > 24 {
+            let days = hours / 24
+            return "\(days)d"
+        } else if hours > 0 {
+            return "\(hours)h"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+struct SettingsWindowView: View {
+    @EnvironmentObject var monitor: QuotaMonitor
+    @State private var selectedAccountId: String? = nil
+    
+    var body: some View {
+        SettingsView(
+            showingSettings: .constant(true),
+            selectedAccountId: $selectedAccountId
+        )
+        .environmentObject(monitor)
+        .onAppear {
+            selectedAccountId = "__general__"
+        }
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject var monitor: QuotaMonitor
+    @Binding var showingSettings: Bool
+    @Binding var selectedAccountId: String?
+    
+    @State private var labelText: String = ""
+    @State private var accessTokenText: String = ""
+    @State private var refreshTokenText: String = ""
+    @State private var accountIdText: String = ""
+    @State private var emailText: String = ""
+    @State private var showDetectAlert = false
+    @State private var detectAlertMessage = ""
+    @State private var draggedAccount: AccountConfig? = nil
+    
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $selectedAccountId) {
+                HStack(spacing: 8) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Text("General")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .tag("__general__")
+                
+                Section("Accounts") {
+                    ForEach(monitor.config.accounts) { acc in
+                        HStack(spacing: 8) {
+                            Image(systemName: acc.type == "codex" ? "terminal" : "sparkle")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                            
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(acc.displayName)
+                                    .font(.system(size: 13))
+                                    .lineLimit(1)
+                                
+                                Text(acc.type == "codex" ? "Codex" : "Antigravity")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tag(acc.id)
+                        .onDrag {
+                            self.draggedAccount = acc
+                            return NSItemProvider(object: acc.id as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: AccountDropDelegate(
+                            item: acc,
+                            draggedItem: $draggedAccount,
+                            monitor: monitor
+                        ))
+                        .contextMenu {
+                            if monitor.config.accounts.count > 1 {
+                                Button("Delete", role: .destructive) {
+                                    monitor.deleteAccount(id: acc.id)
+                                    if selectedAccountId == acc.id {
+                                        selectedAccountId = "__general__"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 12) {
+                        Menu {
+                            Button("Codex Account") {
+                                let newId = monitor.addAccount(type: "codex", label: "New Codex")
+                                selectedAccountId = newId
+                            }
+                            Button("Antigravity Account") {
+                                let newId = monitor.addAccount(type: "antigravity", label: "New Antigravity")
+                                selectedAccountId = newId
+                            }
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 24, height: 24)
+                        
+                        Button(action: {
+                            if let id = selectedAccountId, id != "__general__", monitor.config.accounts.count > 1 {
+                                monitor.deleteAccount(id: id)
+                                selectedAccountId = "__general__"
+                            }
+                        }) {
+                            Image(systemName: "minus")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(monitor.config.accounts.count <= 1)
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+            }
+        } detail: {
+            VStack(spacing: 0) {
+                if selectedAccountId == "__general__" {
+                    Form {
+                        Section("Preferences") {
+                            Toggle("Launch at Login", isOn: Binding(
+                                get: { LaunchAtLoginManager.shared.isEnabled },
+                                set: { LaunchAtLoginManager.shared.setEnabled($0) }
+                            ))
+                            
+                            Picker("Auto-Refresh Interval", selection: Binding(
+                                get: { monitor.config.refreshInterval ?? 60 },
+                                set: { monitor.updateRefreshInterval($0) }
+                            )) {
+                                Text("1 Minute").tag(60)
+                                Text("5 Minutes").tag(300)
+                                Text("10 Minutes").tag(600)
+                                Text("15 Minutes").tag(900)
+                                Text("30 Minutes").tag(1800)
+                                Text("1 Hour").tag(3600)
+                            }
+                            
+                            Picker("Menu Bar Style", selection: Binding(
+                                get: { monitor.config.menuBarStyle ?? "bars" },
+                                set: { monitor.updateMenuBarStyle($0) }
+                            )) {
+                                Text("Progress Bars").tag("bars")
+                                Text("Percentage Text").tag("percentage")
+                                Text("Both Icon and Text").tag("both")
+                            }
+                        }
+                        
+                        Section("Auto-Detect Options") {
+                            Button(action: {
+                                monitor.autoDetectAllCredentials()
+                                detectAlertMessage = "Triggered auto-detection. Checked Keychain & Local Credentials for all accounts."
+                                showDetectAlert = true
+                            }) {
+                                Label("Detect & Import All Accounts", systemImage: "wand.and.stars")
+                            }
+                            Text("LimitBank will search your local system files (~/.codex/auth.json) and Keychain (Gemini/Antigravity credentials) to set up all accounts at once.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .padding(.vertical, 8)
+                } else if let selectedId = selectedAccountId,
+                          let account = monitor.config.accounts.first(where: { $0.id == selectedId }) {
+                    
+                    ScrollView {
+                        Form {
+                            Section("General") {
+                                TextField("Username / Email", text: $emailText)
+                            }
+                            
+                            Section("Quick Setup") {
+                                if account.type == "codex" {
+                                    Button(action: {
+                                        SystemCredentialDetector.launchCodexLogin()
+                                        detectAlertMessage = "Launching Codex CLI login flow. Complete sign-in in your browser, then click 'Import from System Files'."
+                                        showDetectAlert = true
+                                    }) {
+                                        Label("Launch Codex CLI Login", systemImage: "terminal")
+                                    }
+                                    
+                                    Button(action: {
+                                        if let detected = SystemCredentialDetector.detectCodex() {
+                                            accessTokenText = detected.accessToken
+                                            refreshTokenText = detected.refreshToken
+                                            if let accId = detected.accountId {
+                                                accountIdText = accId
+                                            }
+                                            if let email = detected.email {
+                                                emailText = email
+                                            }
+                                            detectAlertMessage = "Successfully imported Codex credentials from ~/.codex/auth.json."
+                                            showDetectAlert = true
+                                        } else {
+                                            detectAlertMessage = "No active Codex session found. Run 'Launch Codex CLI Login' first."
+                                            showDetectAlert = true
+                                        }
+                                    }) {
+                                        Label("Import from System Files", systemImage: "arrow.down.doc")
+                                    }
+                                } else {
+                                    Button(action: {
+                                        OAuthServer.shared.startLoginFlow(
+                                            accountType: "antigravity",
+                                            accountId: account.id
+                                        )
+                                        detectAlertMessage = "Opening Google login page in browser. Once you log in, this account will be automatically updated."
+                                        showDetectAlert = true
+                                    }) {
+                                        Label("Sign In via Google (Browser)", systemImage: "safari")
+                                    }
+                                    
+                                    Button(action: {
+                                        if let detected = SystemCredentialDetector.detectAntigravity() {
+                                            accessTokenText = detected.accessToken
+                                            refreshTokenText = detected.refreshToken
+                                            if let email = detected.email {
+                                                emailText = email
+                                            }
+                                            detectAlertMessage = "Successfully imported Antigravity credentials from macOS Keychain."
+                                            showDetectAlert = true
+                                        } else {
+                                            detectAlertMessage = "No active Antigravity session found in Keychain. Please login in your IDE first."
+                                            showDetectAlert = true
+                                        }
+                                    }) {
+                                        Label("Import from macOS Keychain", systemImage: "key")
+                                    }
+                                }
+                            }
+                            
+                            Section("Credentials") {
+                                if account.type == "codex" {
+                                    SecureField("Access Token", text: $accessTokenText)
+                                    SecureField("Refresh Token", text: $refreshTokenText)
+                                    TextField("Account ID (Optional)", text: $accountIdText)
+                                } else {
+                                    SecureField("Refresh Token", text: $refreshTokenText)
+                                    SecureField("Cached Access Token (Optional)", text: $accessTokenText)
+                                }
+                            }
+                        }
+                        .formStyle(.grouped)
+                        .padding(.vertical, 8)
+                    }
+                    .onChange(of: selectedAccountId) {
+                        loadAccountData()
+                    }
+                    .onAppear {
+                        loadAccountData()
+                    }
+                    
+                } else {
+                    Spacer()
+                    Text("Select an account to configure")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                
+                Divider()
+                
+                // Bottom Action buttons
+                HStack {
+                    Button("Cancel") {
+                        NSApp.keyWindow?.close()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    
+                    Spacer()
+                    
+                    Button("Save") {
+                        if let selectedId = selectedAccountId, selectedId != "__general__" {
+                            let displayLabel = emailText.isEmpty ? (monitor.config.accounts.first(where: { $0.id == selectedId })?.label ?? "Account") : emailText
+                            monitor.updateAccountLabel(id: selectedId, newLabel: displayLabel)
+                            monitor.updateAccountTokens(
+                                id: selectedId,
+                                accessToken: accessTokenText,
+                                refreshToken: refreshTokenText,
+                                accountId: accountIdText.isEmpty ? nil : accountIdText,
+                                email: emailText.isEmpty ? nil : emailText
+                            )
+                        }
+                        NSApp.keyWindow?.close()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
+        .alert(isPresented: $showDetectAlert) {
+            Alert(title: Text("System Auto-Detect"), message: Text(detectAlertMessage), dismissButton: .default(Text("OK")))
+        }
+    }
+    
+    private func loadAccountData() {
+        guard let selectedId = selectedAccountId,
+              let account = monitor.config.accounts.first(where: { $0.id == selectedId }) else { return }
+        
+        labelText = account.label
+        accessTokenText = account.accessToken
+        refreshTokenText = account.refreshToken
+        accountIdText = account.accountId ?? ""
+        
+        if let email = account.email, !email.isEmpty {
+            emailText = email
+        } else if let email = SystemCredentialDetector.parseJWTClaim(account.accessToken, claim: "email") {
+            emailText = email
+        } else {
+            emailText = ""
+        }
+    }
+}
+
+// Custom Colors Helper
+extension Color {
+    static let emerald = Color(red: 16/255, green: 185/255, blue: 129/255)
+}
+
+struct AccountDropDelegate: DropDelegate {
+    let item: AccountConfig
+    @Binding var draggedItem: AccountConfig?
+    let monitor: QuotaMonitor
+    
+    func performDrop(info: DropInfo) -> Bool {
+        self.draggedItem = nil
+        return true
+    }
+    
+    func dropEntered(info: DropInfo) {
+        guard let dragged = draggedItem else { return }
+        if dragged.id != item.id {
+            let fromIndex = monitor.config.accounts.firstIndex(where: { $0.id == dragged.id }) ?? 0
+            let toIndex = monitor.config.accounts.firstIndex(where: { $0.id == item.id }) ?? 0
+            
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                monitor.moveAccount(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            }
+        }
+    }
+    
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+}
+
+struct VisualEffectView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+    
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
