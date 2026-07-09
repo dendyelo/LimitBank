@@ -587,6 +587,9 @@ struct SettingsView: View {
                     .onChange(of: selectedAccountId) {
                         loadAccountData()
                     }
+                    .onChange(of: monitor.config.accounts) {
+                        loadAccountData()
+                    }
                     .onAppear {
                         loadAccountData()
                     }
