@@ -49,6 +49,27 @@ public struct QuotaStatus: Identifiable, Codable {
         self.codexResetCreditsCount = codexResetCreditsCount
         self.codexResetCreditsExpiry = codexResetCreditsExpiry
     }
+
+    public var hasQuotaData: Bool {
+        hoursUsedPercent != nil ||
+            weeklyUsedPercent != nil ||
+            credits != nil ||
+            geminiHoursUsedPercent != nil ||
+            geminiWeeklyUsedPercent != nil ||
+            thirdPartyHoursUsedPercent != nil ||
+            thirdPartyWeeklyUsedPercent != nil ||
+            codexResetCreditsCount != nil
+    }
+
+    public var isTransientFetchError: Bool {
+        guard let error = error?.lowercased() else { return false }
+        return error.contains("timeout") ||
+            error.contains("timed out") ||
+            error.contains("temporarily unavailable") ||
+            error.contains("network connection") ||
+            error.contains("could not connect") ||
+            error.contains("offline")
+    }
 }
 
 public class APIClient {
@@ -60,6 +81,9 @@ public class APIClient {
     private let googleClientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
     private let googleClientSecret = "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"
     private let codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+    private let codexQuotaTimeout: TimeInterval = 25
+    private let codexResetCreditsTimeout: TimeInterval = 8
+    private let codexQuotaRetryCount = 2
 
     private init() {}
 
@@ -583,21 +607,9 @@ public class APIClient {
             request.setValue(accountId, forHTTPHeaderField: "X-Account-Id")
             request.setValue(accountId, forHTTPHeaderField: "ChatClaude-Account-Id")
         }
-        request.timeoutInterval = 10
+        request.timeoutInterval = codexQuotaTimeout
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
-        }
-
-        if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
-            throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unauthorized"])
-        }
-
-        if httpResponse.statusCode != 200 {
-            throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned error status \(httpResponse.statusCode)"])
-        }
+        let data = try await fetchCodexUsageData(request: request, accountLabel: account.label)
 
         // Parse Codex response
         struct CodexWindow: Codable {
@@ -703,7 +715,7 @@ public class APIClient {
             resetRequest.setValue(accountId, forHTTPHeaderField: "ChatClaude-Account-Id")
             resetRequest.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-ID")
         }
-        resetRequest.timeoutInterval = 5
+        resetRequest.timeoutInterval = codexResetCreditsTimeout
 
         if let (resetData, resetResponse) = try? await URLSession.shared.data(for: resetRequest),
            let httpResetResponse = resetResponse as? HTTPURLResponse,
@@ -757,6 +769,75 @@ public class APIClient {
             codexResetCreditsCount: resetCreditsCount,
             codexResetCreditsExpiry: resetCreditsExpiry
         )
+    }
+
+    private func fetchCodexUsageData(request: URLRequest, accountLabel: String) async throws -> Data {
+        var lastError: Error?
+
+        for attempt in 1...codexQuotaRetryCount {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
+                }
+
+                if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                    throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unauthorized"])
+                }
+
+                if (500...599).contains(httpResponse.statusCode) {
+                    throw NSError(domain: "APIClient.CodexUsage", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Codex API temporarily unavailable (HTTP \(httpResponse.statusCode))"])
+                }
+
+                if httpResponse.statusCode != 200 {
+                    throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned error status \(httpResponse.statusCode)"])
+                }
+
+                return data
+            } catch {
+                lastError = error
+                guard attempt < codexQuotaRetryCount, isRetryableCodexQuotaError(error) else {
+                    throw normalizeCodexQuotaError(error)
+                }
+
+                AppLogger.log("Codex quota fetch attempt \(attempt) failed for \(accountLabel): \(error.localizedDescription). Retrying...")
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+
+        throw normalizeCodexQuotaError(lastError ?? NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Codex quota fetch failed"]))
+    }
+
+    private func isRetryableCodexQuotaError(_ error: Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet, .secureConnectionFailed:
+                return true
+            default:
+                return false
+            }
+        }
+
+        let nsError = error as NSError
+        return nsError.domain == "APIClient.CodexUsage" && (500...599).contains(nsError.code)
+    }
+
+    private func normalizeCodexQuotaError(_ error: Error) -> Error {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut:
+                return NSError(domain: "APIClient", code: urlError.errorCode, userInfo: [NSLocalizedDescriptionKey: "Codex API timeout. Will retry automatically."])
+            case .notConnectedToInternet:
+                return NSError(domain: "APIClient", code: urlError.errorCode, userInfo: [NSLocalizedDescriptionKey: "Codex API offline. Check your connection."])
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost:
+                return NSError(domain: "APIClient", code: urlError.errorCode, userInfo: [NSLocalizedDescriptionKey: "Codex API connection failed. Will retry automatically."])
+            default:
+                return urlError
+            }
+        }
+
+        return error
     }
 
     public static func ParseIDTokenUserID(_ idToken: String) -> String? {

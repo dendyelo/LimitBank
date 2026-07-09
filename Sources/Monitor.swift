@@ -132,7 +132,7 @@ public class QuotaMonitor: ObservableObject {
             return
         }
 
-        statuses[status.id] = status
+        statuses[status.id] = displayStatus(status)
         if let updated = updatedConfig,
            let idx = config.accounts.firstIndex(where: { $0.id == updated.id }) {
             config.accounts[idx] = updated
@@ -171,7 +171,7 @@ public class QuotaMonitor: ObservableObject {
                     continue
                 }
 
-                self.statuses[status.id] = status
+                self.statuses[status.id] = self.displayStatus(status)
                 if let updated = updatedConfig {
                     updatedConfigs.append(updated)
                     configChanged = true
@@ -194,6 +194,18 @@ public class QuotaMonitor: ObservableObject {
             lastRefreshedAt = Date()
             onIconUpdate?()
         }
+    }
+
+    private func displayStatus(_ status: QuotaStatus) -> QuotaStatus {
+        guard status.isTransientFetchError,
+              let previous = statuses[status.id],
+              previous.error == nil,
+              previous.hasQuotaData else {
+            return status
+        }
+
+        AppLogger.log("Keeping previous quota for account id \(status.id) after transient error: \(status.error ?? "unknown")")
+        return previous
     }
 
     public func updateAccountLabel(id: String, newLabel: String) {
