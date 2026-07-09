@@ -28,16 +28,27 @@ LimitBank is a lightweight macOS menu bar utility designed for developers to mon
 - macOS 14.0 (Sonoma) or later
 - Swift 5.9 or later (for manual compilation)
 
-## Installation and Build
+## Installation
 
-To compile and package LimitBank as a native macOS application bundle:
+### Option 1: Download Pre-compiled Release (Recommended)
+
+1. Navigate to the [Releases](https://github.com/dendyelo/LimitBank/releases) page on GitHub.
+2. Download the latest `LimitBank.zip` file.
+3. Uncompress the downloaded zip archive.
+4. Drag `LimitBank.app` into your local `/Applications` folder.
+5. Launch the application. 
+   *(Note: Since this binary is unsigned, right-click the app icon, choose **Open**, and then confirm by clicking **Open** in the prompt to allow execution).*
+
+### Option 2: Build from Source
+
+To manually compile and build LimitBank:
 
 1. Clone this repository to your local machine.
-2. Build the application structure by executing the build script:
+2. Run the helper build script to compile the release binary and construct the app structure:
    ```bash
    ./build_app.sh
    ```
-3. Open the compiled application bundle:
+3. Open the newly constructed application bundle:
    ```bash
    open LimitBank.app
    ```
