@@ -1,66 +1,154 @@
 <p align="center">
-  <img src="screenshots/logo.jpg" alt="LimitBank Logo" width="120" />
+  <img src="screenshots/logo.jpg" alt="LimitBank logo" width="120" />
 </p>
 
-# LimitBank
+<h1 align="center">LimitBank</h1>
 
-LimitBank is a lightweight macOS menu bar utility designed for developers to monitor API quotas and token limits for Google Gemini (Antigravity) and OpenAI (Codex) accounts in real time.
+<p align="center">
+  A native macOS menu bar app for monitoring and switching Codex and Antigravity usage limits across multiple accounts.
+</p>
+
+<p align="center">
+  <a href="https://github.com/dendyelo/LimitBank/releases">Download</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#account-workflows">Account Workflows</a>
+  ·
+  <a href="#build-from-source">Build from Source</a>
+</p>
+
+## Overview
+
+LimitBank keeps your Codex and Antigravity account limits visible from the macOS menu bar. It is designed for developers who manage multiple sessions and want a safer way to switch active accounts without losing saved credentials.
+
+The app stores account sessions in a local account bank, refreshes quota data in the background, and can activate a selected account by writing the correct session back to Codex or Antigravity.
 
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/popover.png" alt="LimitBank Popover Status" width="220" />
+  <img src="screenshots/popover.png" alt="LimitBank menu bar popover" width="220" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="screenshots/settings.png" alt="LimitBank Settings" width="480" />
+  <img src="screenshots/settings.png" alt="LimitBank settings window" width="520" />
 </p>
 
 ## Features
 
-- **Real-Time Quota Monitoring**: Tracks hourly, daily, weekly, and monthly limits with high-precision progress indicators directly from the macOS status bar.
-- **Multi-Account Management**: Supports registering and monitoring up to 5 concurrent account slots (2 Codex slots, 3 Antigravity slots).
-- **Native macOS Interface**: Designed with SwiftUI to provide a clean, responsive popover and a native system settings sidebar.
-- **Isolated Sessions**: Authentication tokens are maintained independently of other applications and IDE extensions, avoiding credentials conflicts.
-- **Automatic Sync and Integration**: Detects active sessions and performs background OAuth token refreshes. Integrates helper logic to refresh target application states upon session switching.
-- **OAuth Loopback Server**: Runs a secure local loopback OAuth server on port 12111 to facilitate automated browser sign-in.
+- **Menu bar quota dashboard**: view remaining 5-hour and weekly limits at a glance.
+- **Multi-account bank**: add, remove, reorder, save, and monitor multiple Codex and Antigravity accounts.
+- **Codex session switching**: save Codex CLI sessions, activate a selected account, refresh tokens, update `~/.codex/auth.json`, quit Codex, and reopen it when ready.
+- **Antigravity session switching**: save Google login sessions, update the macOS Keychain entry used by Antigravity, quit Antigravity, and reopen it when ready.
+- **Background refresh**: refresh quota data automatically with configurable intervals.
+- **Transient error handling**: retry temporary Codex quota timeouts and keep the last valid quota on screen when the network is briefly unstable.
+- **Native macOS UI**: SwiftUI popover, Settings sidebar, menu bar icon, Launch at Login, and configurable menu bar display style.
+- **Local-first storage**: credentials and app state stay on your Mac.
 
-## System Requirements
+## Supported Services
 
-- macOS 14.0 (Sonoma) or later
-- Swift 5.9 or later (for manual compilation)
+| Service | What LimitBank Tracks | Session Activation |
+| --- | --- | --- |
+| Codex | Plan, 5-hour usage, weekly usage, credits, and reset credits | Writes `~/.codex/auth.json`, then opens Codex |
+| Antigravity | Gemini and Claude/GPT 5-hour and weekly usage | Writes the active session to macOS Keychain, then opens Antigravity |
+
+## Requirements
+
+- macOS 14 Sonoma or later
+- Swift 5.9 or later, only when building from source
 
 ## Installation
 
-### Option 1: Download Pre-compiled Release (Recommended)
+### Download Release
 
-1. Navigate to the [Releases](https://github.com/dendyelo/LimitBank/releases) page on GitHub.
-2. Download the latest `LimitBank.zip` file.
-3. Uncompress the downloaded zip archive.
-4. Drag `LimitBank.app` into your local `/Applications` folder.
-5. Launch the application. 
-   *(Note: Since this binary is unsigned, right-click the app icon, choose **Open**, and then confirm by clicking **Open** in the prompt to allow execution).*
+1. Open the [Releases](https://github.com/dendyelo/LimitBank/releases) page.
+2. Download the latest `LimitBank.zip`.
+3. Unzip it and move `LimitBank.app` to `/Applications`.
+4. Open the app.
 
-### Option 2: Build from Source
+LimitBank is currently unsigned. If macOS blocks the first launch, right-click `LimitBank.app`, choose **Open**, then confirm the prompt.
 
-To manually compile and build LimitBank:
+### Build from Source
 
-1. Clone this repository to your local machine.
-2. Run the helper build script to compile the release binary and construct the app structure:
-   ```bash
-   ./build_app.sh
-   ```
-3. Open the newly constructed application bundle:
-   ```bash
-   open LimitBank.app
-   ```
+```bash
+git clone https://github.com/dendyelo/LimitBank.git
+cd LimitBank
+./build_app.sh
+open LimitBank.app
+```
 
-## Configuration
+For development builds:
 
-- **Antigravity (Google Gemini) Accounts**: Select the account slot in Settings and click **Sign In via Google (Browser)** to complete authorization.
-- **Codex (OpenAI) Accounts**: Click **Launch Codex CLI Login** to authenticate and switch active sessions.
+```bash
+swift build
+swift run LimitBank
+```
 
-## Privacy and Security
+## Account Workflows
 
-All authentication tokens, credentials, and state information are stored locally on your device within the file `~/.limitbank.json`. LimitBank does not transmit credentials or telemetry to any external servers.
+### Codex
 
----
-Developed by [dendyelo](https://github.com/dendyelo). Built with Swift and SwiftUI.
+1. Open **Settings** from the LimitBank menu.
+2. Add or select a Codex account.
+3. Click **Login, Import & Save** to run the Codex CLI login flow and save the account to LimitBank.
+4. Repeat for each Codex account you want to store.
+5. Click **Activate Codex Session** when you want to switch the active Codex account.
+
+When activating a Codex account, LimitBank closes Codex if it is running, refreshes the saved session, writes `~/.codex/auth.json`, and opens Codex again after the account is ready.
+
+Tip: avoid signing out inside Codex if you want LimitBank to keep the saved session intact. Use **Activate Codex Session** to switch accounts instead.
+
+### Antigravity
+
+1. Open **Settings** from the LimitBank menu.
+2. Add or select an Antigravity account.
+3. Click **Login & Save with Google** to authenticate and save the account to LimitBank.
+4. Repeat for each Antigravity account you want to store.
+5. Click **Activate Antigravity Session** when you want to switch the active Antigravity account.
+
+When activating an Antigravity account, LimitBank closes Antigravity if it is running, refreshes the saved Google session, writes the active credentials to macOS Keychain, and opens Antigravity again after the account is ready.
+
+## Settings
+
+LimitBank includes several app-level preferences:
+
+- **Launch at Login**: start LimitBank automatically when you sign in to macOS.
+- **Auto-Refresh Interval**: choose how often quota data is refreshed.
+- **Menu Bar Style**: show progress bars, percentage text, or both.
+- **Account ordering**: reorder accounts from the Settings sidebar context menu or by dragging cards in the popover.
+
+## Local Data
+
+LimitBank is local-first. It does not run a backend server and does not send your credentials to a LimitBank service.
+
+Data is stored in these local locations:
+
+- `~/.limitbank.json`: LimitBank account bank and saved sessions.
+- `~/.codex/auth.json`: active Codex session written during Codex activation.
+- macOS Keychain: active Antigravity session written during Antigravity activation.
+
+Treat `~/.limitbank.json` as sensitive because it contains saved account session data.
+
+## Troubleshooting
+
+| Problem | What to Try |
+| --- | --- |
+| Codex quota briefly shows a timeout | This is usually a temporary `chatgpt.com` quota API timeout. LimitBank retries automatically and preserves the last valid quota when possible. |
+| Account did not switch immediately | Use **Activate Codex Session** or **Activate Antigravity Session**. LimitBank needs to close the target app before writing the active session. |
+| Google login page says login succeeded | Close the browser tab and return to LimitBank Settings. LimitBank will show a success message after the account is saved. |
+| macOS blocks the app | Right-click `LimitBank.app`, choose **Open**, then confirm the security prompt. |
+| OAuth callback fails | Make sure local port `12111` is not being used by another process, then try the login flow again. |
+
+## Development Notes
+
+- `build_app.sh` creates a release `LimitBank.app` bundle.
+- `secrets.json` is optional and ignored by Git. Use `secrets.json.example` if you want to provide your own Google OAuth client credentials.
+- `LimitBank.app`, `.build`, `.swiftpm`, and local secrets are intentionally ignored.
+
+## License
+
+LimitBank is released under the [MIT License](LICENSE).
+
+## Author
+
+Developed by [dendyelo](https://github.com/dendyelo).
+
+LimitBank is an independent project and is not affiliated with OpenAI, Google, or the Antigravity product team.
