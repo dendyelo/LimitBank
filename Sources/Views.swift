@@ -377,6 +377,28 @@ struct SettingsView: View {
                         }
                         .tag(acc.id)
                         .contextMenu {
+                            if let idx = monitor.config.accounts.firstIndex(where: { $0.id == acc.id }) {
+                                Button("Move Up") {
+                                    if idx > 0 {
+                                        withAnimation {
+                                            monitor.moveAccount(fromOffsets: IndexSet(integer: idx), toOffset: idx - 1)
+                                        }
+                                    }
+                                }
+                                .disabled(idx == 0)
+                                
+                                Button("Move Down") {
+                                    if idx < monitor.config.accounts.count - 1 {
+                                        withAnimation {
+                                            monitor.moveAccount(fromOffsets: IndexSet(integer: idx), toOffset: idx + 2)
+                                        }
+                                    }
+                                }
+                                .disabled(idx == monitor.config.accounts.count - 1)
+                                
+                                Divider()
+                            }
+                            
                             if monitor.config.accounts.count > 1 {
                                 Button("Delete", role: .destructive) {
                                     monitor.deleteAccount(id: acc.id)
