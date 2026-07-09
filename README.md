@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="screenshots/logo.jpg" alt="LimitBank Logo" width="120" />
+</p>
+
 # LimitBank
 
 LimitBank is a lightweight macOS menu bar utility designed for developers to monitor API quotas and token limits for Google Gemini (Antigravity) and OpenAI (Codex) accounts in real time.
