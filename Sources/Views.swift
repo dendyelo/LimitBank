@@ -535,7 +535,7 @@ struct SettingsView: View {
                                         Label("Import from System Files", systemImage: "arrow.down.doc")
                                     }
                                     
-                                    Text("Tips: Untuk berganti akun di terminal/IDE, gunakan tombol 'Launch Codex CLI Login' di atas dibanding melakukan log out. Perintah log out akan membatalkan sesi ini secara permanen di server OpenAI dan memicu status unauthorized di LimitBank.")
+                                    Text("Tip: Do not log out via the Codex app/IDE, as it will invalidate the session in LimitBank. To switch accounts, use the 'Launch Codex CLI Login' button above instead.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)
