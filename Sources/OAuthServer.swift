@@ -68,7 +68,8 @@ public class OAuthServer {
                 authURLString = "https://auth.openai.com/authorize?client_id=app_EMoamEEZ73f0CkXaXp7hrann&redirect_uri=http://127.0.0.1:12111/callback&response_type=code&scope=openid%20profile%20email%20offline_access&code_challenge=\(verifierAndChallenge.challenge)&code_challenge_method=S256&prompt=login"
             } else {
                 // Google OAuth Authorize URL (Antigravity client details)
-                authURLString = "https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&redirect_uri=http://127.0.0.1:12111/callback&response_type=code&scope=openid%20profile%20email%20https://www.googleapis.com/auth/cloud-platform&access_type=offline&prompt=consent"
+                let googleClientID = SecretsManager.shared.secrets?.google_client_id ?? ""
+                authURLString = "https://accounts.google.com/o/oauth2/v2/auth?client_id=\(googleClientID)&redirect_uri=http://127.0.0.1:12111/callback&response_type=code&scope=openid%20profile%20email%20https://www.googleapis.com/auth/cloud-platform&access_type=offline&prompt=consent"
             }
             
             if let url = URL(string: authURLString) {
@@ -356,8 +357,8 @@ public class OAuthServer {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         
         let parameters = [
-            "client_id": "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-            "client_secret": "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",
+            "client_id": SecretsManager.shared.secrets?.google_client_id ?? "",
+            "client_secret": SecretsManager.shared.secrets?.google_client_secret ?? "",
             "code": code,
             "redirect_uri": "http://127.0.0.1:12111/callback",
             "grant_type": "authorization_code"

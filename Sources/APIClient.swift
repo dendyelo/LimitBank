@@ -78,8 +78,12 @@ public class APIClient {
     private var activeRefreshes = Set<String>()
     private let refreshQueue = DispatchQueue(label: "com.limitbank.apiclient")
 
-    private let googleClientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-    private let googleClientSecret = "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"
+    private var googleClientID: String {
+        SecretsManager.shared.secrets?.google_client_id ?? ""
+    }
+    private var googleClientSecret: String {
+        SecretsManager.shared.secrets?.google_client_secret ?? ""
+    }
     private let codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     private let codexQuotaTimeout: TimeInterval = 25
     private let codexResetCreditsTimeout: TimeInterval = 8

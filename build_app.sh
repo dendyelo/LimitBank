@@ -17,6 +17,11 @@ if [ -f "AppIcon.icns" ]; then
     cp AppIcon.icns LimitBank.app/Contents/Resources/AppIcon.icns
 fi
 
+if [ -f "secrets.json" ]; then
+    echo "Copying secrets config..."
+    cp secrets.json LimitBank.app/Contents/Resources/secrets.json
+fi
+
 echo "Writing Info.plist..."
 cat << 'EOF' > LimitBank.app/Contents/Info.plist
 <?xml version="1.0" encoding="UTF-8"?>
