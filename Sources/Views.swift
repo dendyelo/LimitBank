@@ -535,7 +535,7 @@ struct SettingsView: View {
                                         Label("Import from System Files", systemImage: "arrow.down.doc")
                                     }
                                     
-                                    Text("Tip: Do not log out via the Codex app/IDE, as it will invalidate the session in LimitBank. To switch accounts, use the 'Launch Codex CLI Login' button above instead.")
+                                    Text("Tip: Please close your IDE/Codex app before logging in using the CLI to ensure the account switches correctly upon reopening. Do not log out via the Codex app/IDE, as it will invalidate the session in LimitBank; instead, use 'Launch Codex CLI Login' above to switch accounts.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)
