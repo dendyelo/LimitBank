@@ -376,15 +376,6 @@ struct SettingsView: View {
                             }
                         }
                         .tag(acc.id)
-                        .onDrag {
-                            self.draggedAccount = acc
-                            return NSItemProvider(object: acc.id as NSString)
-                        }
-                        .onDrop(of: [.text], delegate: AccountDropDelegate(
-                            item: acc,
-                            draggedItem: $draggedAccount,
-                            monitor: monitor
-                        ))
                         .contextMenu {
                             if monitor.config.accounts.count > 1 {
                                 Button("Delete", role: .destructive) {
