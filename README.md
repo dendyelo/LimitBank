@@ -2,6 +2,14 @@
 
 **LimitBank** is a lightweight, sleek macOS menu bar utility designed for developers to monitor their API quotas and token limits for **Antigravity (Google Gemini)** and **Codex (OpenAI)** accounts in real time.
 
+## Screenshots 📸
+
+<p align="center">
+  <img src="screenshots/popover.png" alt="LimitBank Popover Status" width="220" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="screenshots/settings.png" alt="LimitBank Settings" width="480" />
+</p>
+
 ## Features 🚀
 
 - **Real-Time Quota Monitoring**: Tracks hour, day, week, and monthly limits with beautiful progress bars directly from the macOS menu bar.
