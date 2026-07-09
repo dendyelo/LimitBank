@@ -534,6 +534,11 @@ struct SettingsView: View {
                                     }) {
                                         Label("Import from System Files", systemImage: "arrow.down.doc")
                                     }
+                                    
+                                    Text("Tips: Untuk berganti akun di terminal/IDE, gunakan tombol 'Launch Codex CLI Login' di atas dibanding melakukan log out. Perintah log out akan membatalkan sesi ini secara permanen di server OpenAI dan memicu status unauthorized di LimitBank.")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                        .padding(.top, 4)
                                 } else {
                                     Button(action: {
                                         OAuthServer.shared.startLoginFlow(
