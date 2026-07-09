@@ -10,7 +10,7 @@ public struct QuotaStatus: Identifiable, Codable {
     public var plan: String?
     public var error: String?
     public var lastChecked: Date
-    
+
     // Antigravity: separate Gemini vs Claude/GPT (3p) quotas
     public var geminiHoursUsedPercent: Double?
     public var geminiHoursResetAt: Date?
@@ -20,11 +20,11 @@ public struct QuotaStatus: Identifiable, Codable {
     public var thirdPartyHoursResetAt: Date?
     public var thirdPartyWeeklyUsedPercent: Double?
     public var thirdPartyWeeklyResetAt: Date?
-    
+
     // Codex: rate-limit reset credits (bonus tickets to reset message cap)
     public var codexResetCreditsCount: Int?
     public var codexResetCreditsExpiry: Date?
-    
+
     public init(id: String, hoursUsedPercent: Double? = nil, hoursResetAt: Date? = nil, weeklyUsedPercent: Double? = nil, weeklyResetAt: Date? = nil, credits: Double? = nil, plan: String? = nil, error: String? = nil, lastChecked: Date = Date(),
                 geminiHoursUsedPercent: Double? = nil, geminiHoursResetAt: Date? = nil, geminiWeeklyUsedPercent: Double? = nil, geminiWeeklyResetAt: Date? = nil,
                 thirdPartyHoursUsedPercent: Double? = nil, thirdPartyHoursResetAt: Date? = nil, thirdPartyWeeklyUsedPercent: Double? = nil, thirdPartyWeeklyResetAt: Date? = nil,
@@ -53,49 +53,77 @@ public struct QuotaStatus: Identifiable, Codable {
 
 public class APIClient {
     public static let shared = APIClient()
-    
+
     private var activeRefreshes = Set<String>()
     private let refreshQueue = DispatchQueue(label: "com.limitbank.apiclient")
-    
+
     private let googleClientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
     private let googleClientSecret = "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"
     private let codexClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
-    
+
     private init() {}
-    
+
+    private func tryAcquireRefreshSlot(for accountId: String) -> Bool {
+        refreshQueue.sync {
+            if activeRefreshes.contains(accountId) {
+                return false
+            }
+            activeRefreshes.insert(accountId)
+            return true
+        }
+    }
+
+    private func releaseRefreshSlot(for accountId: String) {
+        refreshQueue.sync {
+            _ = activeRefreshes.remove(accountId)
+        }
+    }
+
+    private func acquireRefreshSlot(for accountId: String, timeout: TimeInterval) async throws {
+        if tryAcquireRefreshSlot(for: accountId) {
+            return
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try await Task.sleep(nanoseconds: 200_000_000)
+            if tryAcquireRefreshSlot(for: accountId) {
+                return
+            }
+        }
+
+        throw NSError(domain: "APIClient", code: -30, userInfo: [NSLocalizedDescriptionKey: "This account is still refreshing. Try again in a moment."])
+    }
+
     /// Checks and refreshes tokens if necessary, then fetches the current quota.
     /// Returns the quota status and any updated account config (e.g. rotated refresh token).
     public func fetchQuota(for account: AccountConfig) async -> (QuotaStatus, AccountConfig?) {
-        let isAlreadyRefreshing = refreshQueue.sync {
-            if activeRefreshes.contains(account.id) {
-                return true
-            }
-            activeRefreshes.insert(account.id)
-            return false
-        }
-        
-        if isAlreadyRefreshing {
+        guard tryAcquireRefreshSlot(for: account.id) else {
             return (QuotaStatus(id: account.id, error: "Auth: Refresh in progress"), nil)
         }
-        
+
         defer {
-            refreshQueue.sync {
-                _ = activeRefreshes.remove(account.id)
-            }
+            releaseRefreshSlot(for: account.id)
         }
-        
+
         var activeAccount = account
         var configUpdated = false
-        
+
         // 1. Handle token refreshing if needed
         if account.type == "antigravity" {
             // Antigravity (Google OAuth)
             if shouldRefresh(expiresAt: account.expiresAt, token: account.accessToken) {
                 if !account.refreshToken.isEmpty {
                     do {
-                        let (newAccess, newExpiresIn) = try await refreshGoogleToken(refreshToken: account.refreshToken)
+                        let (newAccess, newExpiresIn, idToken) = try await refreshGoogleToken(refreshToken: account.refreshToken)
                         activeAccount.accessToken = newAccess
                         activeAccount.expiresAt = Date().addingTimeInterval(newExpiresIn)
+                        if let idToken = idToken {
+                            activeAccount.idToken = idToken
+                            if let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                                activeAccount.email = email
+                            }
+                        }
                         configUpdated = true
                         AppLogger.log("Successfully refreshed Antigravity Google token for: \(account.label)")
                     } catch {
@@ -115,9 +143,11 @@ public class APIClient {
                         activeAccount.accessToken = refreshResp.access_token
                         activeAccount.refreshToken = refreshResp.refresh_token
                         activeAccount.expiresAt = Date().addingTimeInterval(Double(refreshResp.expires_in))
-                        if let idToken = refreshResp.id_token,
-                           let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
-                            activeAccount.email = email
+                        if let idToken = refreshResp.id_token {
+                            activeAccount.idToken = idToken
+                            if let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                                activeAccount.email = email
+                            }
                         }
                         configUpdated = true
                         AppLogger.log("Successfully refreshed Codex OpenAI token (rotated) for: \(account.label)")
@@ -127,23 +157,26 @@ public class APIClient {
                             AppLogger.log("Auto-healing: Recovered fresh Codex tokens from ~/.codex/auth.json for: \(account.label)")
                             activeAccount.accessToken = recovered.accessToken
                             activeAccount.refreshToken = recovered.refreshToken
+                            activeAccount.idToken = recovered.idToken
                             activeAccount.accountId = recovered.accountId
                             activeAccount.expiresAt = nil
                             configUpdated = true
-                            
+
                             do {
                                 let retryResp = try await refreshCodexToken(refreshToken: activeAccount.refreshToken)
                                 activeAccount.accessToken = retryResp.access_token
                                 activeAccount.refreshToken = retryResp.refresh_token
                                 activeAccount.expiresAt = Date().addingTimeInterval(Double(retryResp.expires_in))
-                                if let idToken = retryResp.id_token,
-                                   let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
-                                    activeAccount.email = email
+                                if let idToken = retryResp.id_token {
+                                    activeAccount.idToken = idToken
+                                    if let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                                        activeAccount.email = email
+                                    }
                                 }
                                 configUpdated = true
                                 syncRotatedTokensToSystemFiles(activeAccount)
                             } catch {
-                                return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed after recovery: \(error.localizedDescription)"), configUpdated ? activeAccount : nil)
+                                return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed after recovery: \(error.localizedDescription)"), activeAccount)
                             }
                         } else {
                             return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed: \(error.localizedDescription)"), nil)
@@ -154,7 +187,7 @@ public class APIClient {
                 }
             }
         }
-        
+
         // Extract email as fallback if it is missing
         if activeAccount.email == nil || activeAccount.email?.isEmpty == true {
             if activeAccount.type == "codex" {
@@ -169,7 +202,7 @@ public class APIClient {
                 }
             }
         }
-        
+
         // 2. Fetch actual Quota Data
         do {
             let status: QuotaStatus
@@ -183,73 +216,144 @@ public class APIClient {
             return (QuotaStatus(id: account.id, error: error.localizedDescription), configUpdated ? activeAccount : nil)
         }
     }
-    
+
+    public func prepareCodexAccountForActivation(_ account: AccountConfig) async throws -> AccountConfig {
+        guard account.type == "codex" else {
+            throw NSError(domain: "APIClient", code: -10, userInfo: [NSLocalizedDescriptionKey: "Only Codex accounts can be activated into Codex."])
+        }
+        guard !account.refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "APIClient", code: -11, userInfo: [NSLocalizedDescriptionKey: "This Codex account does not have a saved refresh token. Import it from Codex CLI first."])
+        }
+
+        try await acquireRefreshSlot(for: account.id, timeout: 10)
+
+        defer {
+            releaseRefreshSlot(for: account.id)
+        }
+
+        var activeAccount = account
+        let refreshResp = try await refreshCodexToken(refreshToken: account.refreshToken)
+        activeAccount.accessToken = refreshResp.access_token
+        activeAccount.refreshToken = refreshResp.refresh_token
+        activeAccount.expiresAt = Date().addingTimeInterval(Double(refreshResp.expires_in))
+
+        if let idToken = refreshResp.id_token {
+            activeAccount.idToken = idToken
+            if let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                activeAccount.email = email
+            }
+            if activeAccount.accountId == nil {
+                activeAccount.accountId = APIClient.ParseIDTokenUserID(idToken)
+            }
+        }
+
+        guard activeAccount.idToken?.isEmpty == false else {
+            throw NSError(domain: "APIClient", code: -13, userInfo: [NSLocalizedDescriptionKey: "Codex did not return an id_token for this account. Run Codex CLI login for this account once, import it, then activate it again."])
+        }
+
+        return activeAccount
+    }
+
+    public func prepareAntigravityAccountForActivation(_ account: AccountConfig) async throws -> AccountConfig {
+        guard account.type == "antigravity" else {
+            throw NSError(domain: "APIClient", code: -20, userInfo: [NSLocalizedDescriptionKey: "Only Antigravity accounts can be activated into Antigravity."])
+        }
+        guard !account.refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "APIClient", code: -21, userInfo: [NSLocalizedDescriptionKey: "This Antigravity account does not have a saved refresh token. Login or import it first."])
+        }
+
+        try await acquireRefreshSlot(for: account.id, timeout: 10)
+
+        defer {
+            releaseRefreshSlot(for: account.id)
+        }
+
+        var activeAccount = account
+        let (newAccess, newExpiresIn, idToken) = try await refreshGoogleToken(refreshToken: account.refreshToken)
+        activeAccount.accessToken = newAccess
+        activeAccount.expiresAt = Date().addingTimeInterval(newExpiresIn)
+
+        if let idToken = idToken {
+            activeAccount.idToken = idToken
+            if let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                activeAccount.email = email
+            }
+        }
+
+        if activeAccount.email == nil || activeAccount.email?.isEmpty == true {
+            activeAccount.email = await APIClient.fetchGoogleEmail(accessToken: activeAccount.accessToken)
+        }
+
+        return activeAccount
+    }
+
     private func shouldRefresh(expiresAt: Date?, token: String) -> Bool {
         if token.isEmpty { return true }
         guard let expiresAt = expiresAt else { return true } // If no expiry is stored, assume we need to refresh to get one
         // Refresh if expired or expiring in less than 5 minutes
         return expiresAt.timeIntervalSinceNow < 300
     }
-    
+
     // MARK: - Google OAuth Token Refresh (Antigravity)
-    private func refreshGoogleToken(refreshToken: String) async throws -> (String, Double) {
+    private func refreshGoogleToken(refreshToken: String) async throws -> (String, Double, String?) {
         let url = URL(string: "https://oauth2.googleapis.com/token")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
+
         let parameters = [
             "client_id": googleClientID,
             "client_secret": googleClientSecret,
             "refresh_token": refreshToken,
             "grant_type": "refresh_token"
         ]
-        
+
         let bodyString = parameters.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }.joined(separator: "&")
         request.httpBody = bodyString.data(using: .utf8)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
         }
-        
+
         if httpResponse.statusCode != 200 {
             let errorMsg = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
             throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Token refresh returned status \(httpResponse.statusCode): \(errorMsg)"])
         }
-        
+
         struct GoogleTokenResponse: Codable {
             let access_token: String
             let expires_in: Double
+            let id_token: String?
         }
-        
+
         let tokenResponse = try JSONDecoder().decode(GoogleTokenResponse.self, from: data)
-        return (tokenResponse.access_token, tokenResponse.expires_in)
+        return (tokenResponse.access_token, tokenResponse.expires_in, tokenResponse.id_token)
     }
-    
+
     private static func fetchGoogleEmail(accessToken: String) async -> String? {
         guard let url = URL(string: "https://www.googleapis.com/oauth2/v3/userinfo") else { return nil }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
+
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                 return nil
             }
-            
+
             struct GoogleUserInfo: Codable {
                 let email: String?
             }
-            
+
             let decoded = try JSONDecoder().decode(GoogleUserInfo.self, from: data)
             return decoded.email
         } catch {
             return nil
         }
     }
-    
+
     // MARK: - OpenAI OAuth Token Refresh (Codex)
     private struct CodexTokenResponse: Codable {
         let access_token: String
@@ -257,48 +361,48 @@ public class APIClient {
         let expires_in: Int
         let id_token: String?
     }
-    
+
     private func refreshCodexToken(refreshToken: String) async throws -> CodexTokenResponse {
         let url = URL(string: "https://auth.openai.com/oauth/token")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.setValue("codex-cli/1.0.0", forHTTPHeaderField: "User-Agent")
-        
+
         let parameters = [
             "grant_type": "refresh_token",
             "refresh_token": refreshToken,
             "client_id": codexClientID,
             "scope": "openid profile email offline_access"
         ]
-        
+
         let bodyString = parameters.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }.joined(separator: "&")
         request.httpBody = bodyString.data(using: .utf8)
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
         }
-        
+
         if httpResponse.statusCode != 200 {
             let errorMsg = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
             throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Codex token refresh returned status \(httpResponse.statusCode): \(errorMsg)"])
         }
-        
+
         return try JSONDecoder().decode(CodexTokenResponse.self, from: data)
     }
-    
+
     // MARK: - Quota Fetchers (Antigravity)
     private func fetchAntigravityQuota(account: AccountConfig) async throws -> QuotaStatus {
         let baseURLs = [
             "https://cloudcode-pa.googleapis.com",
             "https://daily-cloudcode-pa.googleapis.com"
         ]
-        
+
         var summaryData: Data? = nil
         var fetchError: Error? = nil
-        
+
         // Try each base URL
         for base in baseURLs {
             guard let url = URL(string: base + "/v1internal:retrieveUserQuotaSummary") else { continue }
@@ -310,7 +414,7 @@ public class APIClient {
             request.setValue("antigravity", forHTTPHeaderField: "User-Agent")
             request.httpBody = "{}".data(using: .utf8)
             request.timeoutInterval = 10
-            
+
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse {
@@ -326,11 +430,11 @@ public class APIClient {
                 fetchError = error
             }
         }
-        
+
         if summaryData == nil {
             throw fetchError ?? NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to connect to Antigravity API"])
         }
-        
+
         // Parse Antigravity response
         struct Bucket: Codable {
             let bucketId: String?
@@ -347,16 +451,16 @@ public class APIClient {
             let response: ResponseRoot?
             let groups: [Group]?
         }
-        
+
         let decoder = JSONDecoder()
         let envelope = try decoder.decode(Envelope.self, from: summaryData!)
         let groups = envelope.response?.groups ?? envelope.groups ?? []
-        
+
         var hoursUsed: Double? = nil
         var hoursReset: Date? = nil
         var weeklyUsed: Double? = nil
         var weeklyReset: Date? = nil
-        
+
         // Separate Gemini vs 3P (Claude/GPT)
         var geminiHoursUsed: Double? = nil
         var geminiHoursReset: Date? = nil
@@ -366,10 +470,10 @@ public class APIClient {
         var tpHoursReset: Date? = nil
         var tpWeeklyUsed: Double? = nil
         var tpWeeklyReset: Date? = nil
-        
+
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        
+
         func parseDate(_ str: String?) -> Date? {
             guard let str = str else { return nil }
             if let date = dateFormatter.date(from: str) {
@@ -379,14 +483,14 @@ public class APIClient {
             let fallbackFormatter = ISO8601DateFormatter()
             return fallbackFormatter.date(from: str)
         }
-        
+
         for bucket in groups.flatMap({ $0.buckets ?? [] }) {
             guard let id = bucket.bucketId else { continue }
             guard let fraction = bucket.remainingFraction else { continue }
-            
+
             let usedPercent = (1.0 - fraction) * 100.0
             let resetDate = parseDate(bucket.resetTime)
-            
+
             switch id {
             case "gemini-5h":
                 geminiHoursUsed = usedPercent
@@ -420,7 +524,7 @@ public class APIClient {
                 break
             }
         }
-        
+
         // Fetch Plan Name (best-effort)
         var planName: String? = nil
         for base in baseURLs {
@@ -433,7 +537,7 @@ public class APIClient {
             request.setValue("agy", forHTTPHeaderField: "User-Agent")
             request.httpBody = "{}".data(using: .utf8)
             request.timeoutInterval = 5
-            
+
             if let (data, response) = try? await URLSession.shared.data(for: request),
                let httpResponse = response as? HTTPURLResponse,
                (200..<300).contains(httpResponse.statusCode) {
@@ -448,7 +552,7 @@ public class APIClient {
                 }
             }
         }
-        
+
         return QuotaStatus(
             id: account.id,
             hoursUsedPercent: hoursUsed,
@@ -466,7 +570,7 @@ public class APIClient {
             thirdPartyWeeklyResetAt: tpWeeklyReset
         )
     }
-    
+
     // MARK: - Quota Fetchers (Codex)
     private func fetchCodexQuota(account: AccountConfig) async throws -> QuotaStatus {
         let url = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
@@ -480,21 +584,21 @@ public class APIClient {
             request.setValue(accountId, forHTTPHeaderField: "ChatClaude-Account-Id")
         }
         request.timeoutInterval = 10
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid server response"])
         }
-        
+
         if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
             throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Unauthorized"])
         }
-        
+
         if httpResponse.statusCode != 200 {
             throw NSError(domain: "APIClient", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Server returned error status \(httpResponse.statusCode)"])
         }
-        
+
         // Parse Codex response
         struct CodexWindow: Codable {
             let used_percent: Double?
@@ -515,14 +619,14 @@ public class APIClient {
             let rate_limit: CodexRateLimit?
             let credits: CodexCredits?
         }
-        
+
         // Handle flexible CodexBalanceValue
         enum CodexBalanceValue: Codable {
             case double(Double)
             case string(String)
             case dict(CodexBalance)
             case null
-            
+
             init(from decoder: Decoder) throws {
                 let container = try decoder.singleValueContainer()
                 if container.decodeNil() {
@@ -537,7 +641,7 @@ public class APIClient {
                     self = .null
                 }
             }
-            
+
             func encode(to encoder: Encoder) throws {
                 var container = encoder.singleValueContainer()
                 switch self {
@@ -548,14 +652,14 @@ public class APIClient {
                 }
             }
         }
-        
+
         let codexResp = try JSONDecoder().decode(CodexResponse.self, from: data)
-        
+
         var hoursUsed: Double? = nil
         var hoursReset: Date? = nil
         var weeklyUsed: Double? = nil
         var weeklyReset: Date? = nil
-        
+
         // Codex windows: primary is typically 5h, secondary is weekly
         if let primary = codexResp.rate_limit?.primary_window {
             hoursUsed = primary.used_percent
@@ -563,15 +667,15 @@ public class APIClient {
                 hoursReset = Date(timeIntervalSince1970: TimeInterval(resetUnix))
             }
         }
-        
+
         if let secondary = codexResp.rate_limit?.secondary_window {
             weeklyUsed = secondary.used_percent
             if let resetUnix = secondary.reset_at {
                 weeklyReset = Date(timeIntervalSince1970: TimeInterval(resetUnix))
             }
         }
-        
-        
+
+
         var creditsVal: Double? = nil
         if let credits = codexResp.credits?.balance {
             switch credits {
@@ -581,11 +685,11 @@ public class APIClient {
             case .null: break
             }
         }
-        
+
         // Fetch Rate Limit Reset Credits (best-effort)
         var resetCreditsCount: Int? = nil
         var resetCreditsExpiry: Date? = nil
-        
+
         let resetUrl = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
         var resetRequest = URLRequest(url: resetUrl)
         resetRequest.httpMethod = "GET"
@@ -600,11 +704,11 @@ public class APIClient {
             resetRequest.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-ID")
         }
         resetRequest.timeoutInterval = 5
-        
+
         if let (resetData, resetResponse) = try? await URLSession.shared.data(for: resetRequest),
            let httpResetResponse = resetResponse as? HTTPURLResponse,
            (200..<300).contains(httpResetResponse.statusCode) {
-            
+
             struct ResetCredit: Codable {
                 let status: String?
                 let expires_at: String?
@@ -613,15 +717,15 @@ public class APIClient {
                 let available_count: Int?
                 let credits: [ResetCredit]?
             }
-            
+
             let resetDecoder = JSONDecoder()
             if let decodedResets = try? resetDecoder.decode(ResetCreditsResponse.self, from: resetData) {
                 resetCreditsCount = decodedResets.available_count
-                
+
                 // Find the earliest expiration date among active/granted credits
                 let dateFormatter = ISO8601DateFormatter()
                 dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                
+
                 var earliestExpiry: Date? = nil
                 if let credits = decodedResets.credits {
                     for credit in credits {
@@ -641,7 +745,7 @@ public class APIClient {
                 resetCreditsExpiry = earliestExpiry
             }
         }
-        
+
         return QuotaStatus(
             id: account.id,
             hoursUsedPercent: hoursUsed,
@@ -654,11 +758,11 @@ public class APIClient {
             codexResetCreditsExpiry: resetCreditsExpiry
         )
     }
-    
+
     public static func ParseIDTokenUserID(_ idToken: String) -> String? {
         let parts = idToken.components(separatedBy: ".")
         guard parts.count == 3 else { return nil }
-        
+
         var base64 = parts[1]
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
@@ -666,12 +770,12 @@ public class APIClient {
         if padding > 0 {
             base64 += String(repeating: "=", count: 4 - padding)
         }
-        
+
         guard let data = Data(base64Encoded: base64),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        
+
         if let authClaims = json["https://api.openai.com/auth"] as? [String: Any] {
             if let userId = authClaims["chatgpt_user_id"] as? String {
                 return userId.trimmingCharacters(in: .whitespaces)
@@ -680,19 +784,19 @@ public class APIClient {
                 return userId.trimmingCharacters(in: .whitespaces)
             }
         }
-        
+
         return nil
     }
-    
+
     private func syncRotatedTokensToSystemFiles(_ account: AccountConfig) {
         guard account.type == "codex" else { return }
-        
+
         let home = FileManager.default.homeDirectoryForCurrentUser
         let authURL = home.appendingPathComponent(".codex/auth.json")
-        
+
         guard FileManager.default.fileExists(atPath: authURL.path),
               let data = try? Data(contentsOf: authURL) else { return }
-              
+
         struct CodexAuthTokens: Codable {
             let access_token: String?
             let refresh_token: String?
@@ -702,38 +806,38 @@ public class APIClient {
         struct CodexAuth: Codable {
             var tokens: CodexAuthTokens?
         }
-        
-        guard var auth = try? JSONDecoder().decode(CodexAuth.self, from: data),
+
+        guard let auth = try? JSONDecoder().decode(CodexAuth.self, from: data),
               let tokens = auth.tokens,
               let idToken = tokens.id_token,
               let systemEmail = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") else { return }
-              
+
         if systemEmail.lowercased() == account.email?.lowercased() {
-            let updatedTokens = CodexAuthTokens(
-                access_token: account.accessToken,
-                refresh_token: account.refreshToken,
-                id_token: tokens.id_token,
-                account_id: tokens.account_id
-            )
-            auth.tokens = updatedTokens
-            
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            if let encodedData = try? encoder.encode(auth) {
-                try? encodedData.write(to: authURL, options: .atomic)
+            var accountToWrite = account
+            if accountToWrite.idToken == nil {
+                accountToWrite.idToken = tokens.id_token
+            }
+            if accountToWrite.accountId == nil {
+                accountToWrite.accountId = tokens.account_id
+            }
+
+            do {
+                try SystemCredentialDetector.writeCodexAuthFile(for: accountToWrite)
                 AppLogger.log("Synchronized rotated Codex tokens back to ~/.codex/auth.json")
+            } catch {
+                AppLogger.log("Failed to synchronize rotated Codex tokens: \(error.localizedDescription)")
             }
         }
     }
-    
-    private func tryToRecoverCodexTokens(for account: AccountConfig) -> (accessToken: String, refreshToken: String, accountId: String?)? {
+
+    private func tryToRecoverCodexTokens(for account: AccountConfig) -> (accessToken: String, refreshToken: String, idToken: String?, accountId: String?)? {
         guard let detected = SystemCredentialDetector.detectCodex() else { return nil }
-        
+
         let accEmail = account.email?.lowercased() ?? ""
         let detEmail = detected.email?.lowercased() ?? ""
         guard !detEmail.isEmpty && accEmail == detEmail else { return nil }
         guard detected.refreshToken != account.refreshToken else { return nil }
-        
-        return (detected.accessToken, detected.refreshToken, detected.accountId)
+
+        return (detected.accessToken, detected.refreshToken, detected.idToken, detected.accountId)
     }
 }

@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct PopoverView: View {
     @StateObject private var monitor = QuotaMonitor.shared
     @State private var draggedAccount: AccountConfig? = nil
-    
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -12,7 +12,7 @@ struct PopoverView: View {
                     ForEach(monitor.config.accounts) { account in
                         let status = monitor.statuses[account.id] ?? QuotaStatus(id: account.id)
                         let isSelected = monitor.config.selectedAccountId == account.id
-                        
+
                         AccountRowView(
                             account: account,
                             status: status,
@@ -44,12 +44,12 @@ struct MenuAccountRowView: View {
     @ObservedObject var monitor = QuotaMonitor.shared
     let accountId: String
     let onSelect: () -> Void
-    
+
     var body: some View {
         if let account = monitor.config.accounts.first(where: { $0.id == accountId }) {
             let status = monitor.statuses[accountId] ?? QuotaStatus(id: accountId)
             let isSelected = monitor.config.selectedAccountId == accountId
-            
+
             AccountRowView(
                 account: account,
                 status: status,
@@ -65,7 +65,7 @@ struct AccountRowView: View {
     let status: QuotaStatus
     let isSelected: Bool
     let onSelect: () -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
@@ -74,13 +74,13 @@ struct AccountRowView: View {
                         Text(account.displayName)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(.primary)
-                        
+
                         Circle()
                             .fill(statusColor)
                             .frame(width: 6, height: 6)
                             .shadow(color: statusColor.opacity(0.5), radius: 2)
                     }
-                    
+
                     HStack(spacing: 4) {
                         Text(account.type == "codex" ? "Codex" : "Antigravity")
                             .font(.system(size: 11))
@@ -93,16 +93,16 @@ struct AccountRowView: View {
                             .foregroundColor(.secondary.opacity(0.8))
                     }
                 }
-                
+
                 Spacer()
-                
+
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.secondary)
                         .font(.system(size: 14))
                 }
             }
-            
+
             if let error = status.error {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
@@ -121,14 +121,14 @@ struct AccountRowView: View {
                         Text("Gemini")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.secondary)
-                        
+
                         QuotaBarView(
                             icon: "clock",
                             label: "5H",
                             usedPercent: status.geminiHoursUsedPercent,
                             resetAt: status.geminiHoursResetAt
                         )
-                        
+
                         QuotaBarView(
                             icon: "calendar",
                             label: "WK",
@@ -136,20 +136,20 @@ struct AccountRowView: View {
                             resetAt: status.geminiWeeklyResetAt
                         )
                     }
-                    
+
                     // Claude & GPT Models
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Claude / GPT")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.secondary)
-                        
+
                         QuotaBarView(
                             icon: "clock",
                             label: "5H",
                             usedPercent: status.thirdPartyHoursUsedPercent,
                             resetAt: status.thirdPartyHoursResetAt
                         )
-                        
+
                         QuotaBarView(
                             icon: "calendar",
                             label: "WK",
@@ -167,14 +167,14 @@ struct AccountRowView: View {
                         usedPercent: status.hoursUsedPercent,
                         resetAt: status.hoursResetAt
                     )
-                    
+
                     QuotaBarView(
                         icon: "calendar",
                         label: "WK",
                         usedPercent: status.weeklyUsedPercent,
                         resetAt: status.weeklyResetAt
                     )
-                    
+
                     if let credits = status.credits {
                         HStack(spacing: 6) {
                             Image(systemName: "dollarsign.circle")
@@ -190,7 +190,7 @@ struct AccountRowView: View {
                         }
                         .padding(.top, 2)
                     }
-                    
+
                     if let resets = status.codexResetCreditsCount, resets > 0 {
                         HStack(spacing: 6) {
                             Image(systemName: "ticket")
@@ -228,7 +228,7 @@ struct AccountRowView: View {
             onSelect()
         }
     }
-    
+
     private var statusColor: Color {
         if status.error != nil {
             return .red
@@ -245,7 +245,7 @@ struct QuotaBarView: View {
     let label: String
     let usedPercent: Double?
     let resetAt: Date?
-    
+
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
@@ -257,14 +257,14 @@ struct QuotaBarView: View {
                     .foregroundColor(.secondary)
             }
             .frame(width: 38, alignment: .leading)
-            
+
             // Thin progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2.5)
                         .fill(Color.primary.opacity(0.08))
                         .frame(height: 5)
-                    
+
                     if let used = usedPercent {
                         let remaining = max(0.0, 100.0 - used)
                         RoundedRectangle(cornerRadius: 2.5)
@@ -274,7 +274,7 @@ struct QuotaBarView: View {
                 }
             }
             .frame(height: 5)
-            
+
             // Value & Reset Timer
             HStack(spacing: 4) {
                 if let used = usedPercent {
@@ -282,7 +282,7 @@ struct QuotaBarView: View {
                     Text(String(format: "%.0f%%", remaining))
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.primary)
-                    
+
                     if let resetStr = QuotaBarView.timeRemaining(from: resetAt), !resetStr.isEmpty {
                         Text("• \(resetStr)")
                             .font(.system(size: 11))
@@ -296,7 +296,7 @@ struct QuotaBarView: View {
             }
         }
     }
-    
+
     static func timeRemaining(from date: Date?) -> String? {
         guard let date = date else { return nil }
         let seconds = Int(date.timeIntervalSinceNow)
@@ -319,7 +319,7 @@ struct QuotaBarView: View {
 struct SettingsWindowView: View {
     @EnvironmentObject var monitor: QuotaMonitor
     @State private var selectedAccountId: String? = nil
-    
+
     var body: some View {
         SettingsView(
             showingSettings: .constant(true),
@@ -336,16 +336,20 @@ struct SettingsView: View {
     @EnvironmentObject var monitor: QuotaMonitor
     @Binding var showingSettings: Bool
     @Binding var selectedAccountId: String?
-    
+
     @State private var labelText: String = ""
     @State private var accessTokenText: String = ""
     @State private var refreshTokenText: String = ""
+    @State private var idTokenText: String = ""
     @State private var accountIdText: String = ""
     @State private var emailText: String = ""
     @State private var showDetectAlert = false
     @State private var detectAlertMessage = ""
     @State private var draggedAccount: AccountConfig? = nil
-    
+    @State private var isActivatingCodex = false
+    @State private var isActivatingAntigravity = false
+    @State private var isLoggingInCodex = false
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedAccountId) {
@@ -357,19 +361,19 @@ struct SettingsView: View {
                         .font(.system(size: 13, weight: .medium))
                 }
                 .tag("__general__")
-                
+
                 Section("Accounts") {
                     ForEach(monitor.config.accounts) { acc in
                         HStack(spacing: 8) {
                             Image(systemName: acc.type == "codex" ? "terminal" : "sparkle")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
-                            
+
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(acc.displayName)
                                     .font(.system(size: 13))
                                     .lineLimit(1)
-                                
+
                                 Text(acc.type == "codex" ? "Codex" : "Antigravity")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
@@ -386,7 +390,7 @@ struct SettingsView: View {
                                     }
                                 }
                                 .disabled(idx == 0)
-                                
+
                                 Button("Move Down") {
                                     if idx < monitor.config.accounts.count - 1 {
                                         withAnimation {
@@ -395,10 +399,10 @@ struct SettingsView: View {
                                     }
                                 }
                                 .disabled(idx == monitor.config.accounts.count - 1)
-                                
+
                                 Divider()
                             }
-                            
+
                             if monitor.config.accounts.count > 1 {
                                 Button("Delete", role: .destructive) {
                                     monitor.deleteAccount(id: acc.id)
@@ -431,7 +435,7 @@ struct SettingsView: View {
                         }
                         .menuStyle(.borderlessButton)
                         .frame(width: 24, height: 24)
-                        
+
                         Button(action: {
                             if let id = selectedAccountId, id != "__general__", monitor.config.accounts.count > 1 {
                                 monitor.deleteAccount(id: id)
@@ -442,7 +446,7 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderless)
                         .disabled(monitor.config.accounts.count <= 1)
-                        
+
                         Spacer()
                     }
                     .padding(.horizontal, 16)
@@ -458,7 +462,7 @@ struct SettingsView: View {
                                 get: { LaunchAtLoginManager.shared.isEnabled },
                                 set: { LaunchAtLoginManager.shared.setEnabled($0) }
                             ))
-                            
+
                             Picker("Auto-Refresh Interval", selection: Binding(
                                 get: { monitor.config.refreshInterval ?? 60 },
                                 set: { monitor.updateRefreshInterval($0) }
@@ -470,7 +474,7 @@ struct SettingsView: View {
                                 Text("30 Minutes").tag(1800)
                                 Text("1 Hour").tag(3600)
                             }
-                            
+
                             Picker("Menu Bar Style", selection: Binding(
                                 get: { monitor.config.menuBarStyle ?? "bars" },
                                 set: { monitor.updateMenuBarStyle($0) }
@@ -486,44 +490,87 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                 } else if let selectedId = selectedAccountId,
                           let account = monitor.config.accounts.first(where: { $0.id == selectedId }) {
-                    
+
                     ScrollView {
                         Form {
                             Section("General") {
                                 TextField("Username / Email", text: $emailText)
                             }
-                            
+
                             Section("Quick Setup") {
                                 if account.type == "codex" {
                                     Button(action: {
-                                        SystemCredentialDetector.launchCodexLogin()
-                                        detectAlertMessage = "Launching Codex CLI login flow. Complete sign-in in your browser, then click 'Import from System Files'."
-                                        showDetectAlert = true
-                                    }) {
-                                        Label("Launch Codex CLI Login", systemImage: "terminal")
-                                    }
-                                    
-                                    Button(action: {
-                                        if let detected = SystemCredentialDetector.detectCodex() {
-                                            accessTokenText = detected.accessToken
-                                            refreshTokenText = detected.refreshToken
-                                            if let accId = detected.accountId {
-                                                accountIdText = accId
+                                        Task { @MainActor in
+                                            isLoggingInCodex = true
+                                            defer { isLoggingInCodex = false }
+
+                                            do {
+                                                try await SystemCredentialDetector.loginCodexAndWait()
+                                                guard let detected = SystemCredentialDetector.detectCodex() else {
+                                                    detectAlertMessage = "Codex login finished, but no active session was found in ~/.codex/auth.json."
+                                                    showDetectAlert = true
+                                                    return
+                                                }
+
+                                                saveDetectedCodexCredentials(detected, to: account)
+                                                detectAlertMessage = "Codex account saved to LimitBank."
+                                            } catch {
+                                                detectAlertMessage = "Codex login failed: \(error.localizedDescription)"
                                             }
-                                            if let email = detected.email {
-                                                emailText = email
-                                            }
-                                            detectAlertMessage = "Successfully imported Codex credentials from ~/.codex/auth.json."
-                                            showDetectAlert = true
-                                        } else {
-                                            detectAlertMessage = "No active Codex session found. Run 'Launch Codex CLI Login' first."
                                             showDetectAlert = true
                                         }
                                     }) {
-                                        Label("Import from System Files", systemImage: "arrow.down.doc")
+                                        Label(isLoggingInCodex ? "Waiting for Login..." : "Login, Import & Save", systemImage: "terminal")
                                     }
-                                    
-                                    Text("Tip: Please close your IDE/Codex app before logging in using the CLI to ensure the account switches correctly upon reopening. Do not log out via the Codex app/IDE, as it will invalidate the session in LimitBank; instead, use 'Launch Codex CLI Login' above to switch accounts.")
+                                    .disabled(isLoggingInCodex || isActivatingCodex)
+
+                                    Button(action: {
+                                        if let detected = SystemCredentialDetector.detectCodex() {
+                                            saveDetectedCodexCredentials(detected, to: account)
+                                            detectAlertMessage = "Codex account imported and saved to LimitBank."
+                                            showDetectAlert = true
+                                        } else {
+                                            detectAlertMessage = "No active Codex session found. Run 'Login, Import & Save' first."
+                                            showDetectAlert = true
+                                        }
+                                    }) {
+                                        Label("Import & Save from System Files", systemImage: "arrow.down.doc")
+                                    }
+
+                                    Button(action: {
+                                        Task { @MainActor in
+                                            isActivatingCodex = true
+                                            defer { isActivatingCodex = false }
+
+                                            var codexAccount = account
+                                            let trimmedEmail = emailText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            codexAccount.accessToken = accessTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            codexAccount.refreshToken = refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            codexAccount.idToken = idTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? account.idToken : idTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            codexAccount.accountId = accountIdText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : accountIdText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            codexAccount.email = trimmedEmail.isEmpty ? account.email : trimmedEmail
+                                            if !trimmedEmail.isEmpty {
+                                                codexAccount.label = trimmedEmail
+                                            }
+
+                                            do {
+                                                let didQuitCodex = try await monitor.activateCodexAccount(codexAccount)
+                                                if didQuitCodex {
+                                                    detectAlertMessage = "Codex was closed and this account is now active in ~/.codex/auth.json. You can open Codex now."
+                                                } else {
+                                                    detectAlertMessage = "This account is now active in ~/.codex/auth.json. You can open Codex now."
+                                                }
+                                            } catch {
+                                                detectAlertMessage = "Failed to activate Codex account: \(error.localizedDescription)"
+                                            }
+                                            showDetectAlert = true
+                                        }
+                                    }) {
+                                        Label(isActivatingCodex ? "Activating..." : "Set as Active Codex Session", systemImage: "arrow.triangle.2.circlepath")
+                                    }
+                                    .disabled(isActivatingCodex || accessTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                                    Text("Tip: To switch accounts, import each account once, then use 'Set as Active Codex Session'. LimitBank will close Codex first if it is running. Avoid signing out inside Codex, because that can revoke the saved session.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)
@@ -533,31 +580,64 @@ struct SettingsView: View {
                                             accountType: "antigravity",
                                             accountId: account.id
                                         )
-                                        detectAlertMessage = "Opening Google login page in browser. Once you log in, this account will be automatically updated."
+                                        detectAlertMessage = "Opening Google login. Once login finishes, this account will be saved to LimitBank automatically."
                                         showDetectAlert = true
                                     }) {
-                                        Label("Sign In via Google (Browser)", systemImage: "safari")
+                                        Label("Login & Save with Google", systemImage: "safari")
                                     }
-                                    
+
                                     Button(action: {
                                         if let detected = SystemCredentialDetector.detectAntigravity() {
-                                            accessTokenText = detected.accessToken
-                                            refreshTokenText = detected.refreshToken
-                                            if let email = detected.email {
-                                                emailText = email
-                                            }
-                                            detectAlertMessage = "Successfully imported Antigravity credentials from macOS Keychain."
+                                            saveDetectedAntigravityCredentials(detected, to: account)
+                                            detectAlertMessage = "Antigravity account imported and saved to LimitBank."
                                             showDetectAlert = true
                                         } else {
                                             detectAlertMessage = "No active Antigravity session found in Keychain. Please login in your IDE first."
                                             showDetectAlert = true
                                         }
                                     }) {
-                                        Label("Import from macOS Keychain", systemImage: "key")
+                                        Label("Import & Save from Keychain", systemImage: "key")
                                     }
+
+                                    Button(action: {
+                                        Task { @MainActor in
+                                            isActivatingAntigravity = true
+                                            defer { isActivatingAntigravity = false }
+
+                                            var antigravityAccount = account
+                                            let trimmedEmail = emailText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            antigravityAccount.accessToken = accessTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            antigravityAccount.refreshToken = refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            antigravityAccount.idToken = idTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? account.idToken : idTokenText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                            antigravityAccount.email = trimmedEmail.isEmpty ? account.email : trimmedEmail
+                                            if !trimmedEmail.isEmpty {
+                                                antigravityAccount.label = trimmedEmail
+                                            }
+
+                                            do {
+                                                let didQuitAntigravity = try await monitor.activateAntigravityAccount(antigravityAccount)
+                                                if didQuitAntigravity {
+                                                    detectAlertMessage = "Antigravity was closed and this account is now active in Keychain. You can open Antigravity now."
+                                                } else {
+                                                    detectAlertMessage = "This account is now active in Keychain. You can open Antigravity now."
+                                                }
+                                            } catch {
+                                                detectAlertMessage = "Failed to activate Antigravity account: \(error.localizedDescription)"
+                                            }
+                                            showDetectAlert = true
+                                        }
+                                    }) {
+                                        Label(isActivatingAntigravity ? "Activating..." : "Activate Antigravity Session", systemImage: "arrow.triangle.2.circlepath")
+                                    }
+                                    .disabled(isActivatingAntigravity || refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                                    Text("Tip: To switch Antigravity accounts, import each account once, then use 'Activate Antigravity Session'. LimitBank will close Antigravity first if it is running.")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                        .padding(.top, 4)
                                 }
                             }
-                            
+
                             Section("Credentials") {
                                 if account.type == "codex" {
                                     SecureField("Access Token", text: $accessTokenText)
@@ -581,7 +661,7 @@ struct SettingsView: View {
                     .onAppear {
                         loadAccountData()
                     }
-                    
+
                 } else {
                     Spacer()
                     Text("Select an account to configure")
@@ -589,18 +669,18 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                     Spacer()
                 }
-                
+
                 Divider()
-                
+
                 // Bottom Action buttons
                 HStack {
                     Button("Cancel") {
                         NSApp.keyWindow?.close()
                     }
                     .keyboardShortcut(.cancelAction)
-                    
+
                     Spacer()
-                    
+
                     Button("Save") {
                         if let selectedId = selectedAccountId, selectedId != "__general__" {
                             let displayLabel = emailText.isEmpty ? (monitor.config.accounts.first(where: { $0.id == selectedId })?.label ?? "Account") : emailText
@@ -609,6 +689,7 @@ struct SettingsView: View {
                                 id: selectedId,
                                 accessToken: accessTokenText,
                                 refreshToken: refreshTokenText,
+                                idToken: idTokenText.isEmpty ? nil : idTokenText,
                                 accountId: accountIdText.isEmpty ? nil : accountIdText,
                                 email: emailText.isEmpty ? nil : emailText
                             )
@@ -625,16 +706,17 @@ struct SettingsView: View {
             Alert(title: Text("System Auto-Detect"), message: Text(detectAlertMessage), dismissButton: .default(Text("OK")))
         }
     }
-    
+
     private func loadAccountData() {
         guard let selectedId = selectedAccountId,
               let account = monitor.config.accounts.first(where: { $0.id == selectedId }) else { return }
-        
+
         labelText = account.label
         accessTokenText = account.accessToken
         refreshTokenText = account.refreshToken
+        idTokenText = account.idToken ?? ""
         accountIdText = account.accountId ?? ""
-        
+
         if let email = account.email, !email.isEmpty {
             emailText = email
         } else if let email = SystemCredentialDetector.parseJWTClaim(account.accessToken, claim: "email") {
@@ -642,6 +724,48 @@ struct SettingsView: View {
         } else {
             emailText = ""
         }
+    }
+
+    private func saveDetectedCodexCredentials(
+        _ detected: (accessToken: String, refreshToken: String, idToken: String?, accountId: String?, email: String?),
+        to account: AccountConfig
+    ) {
+        accessTokenText = detected.accessToken
+        refreshTokenText = detected.refreshToken
+        idTokenText = detected.idToken ?? ""
+        accountIdText = detected.accountId ?? ""
+        emailText = detected.email ?? ""
+
+        let displayLabel = emailText.isEmpty ? account.label : emailText
+        monitor.updateAccountLabel(id: account.id, newLabel: displayLabel)
+        monitor.updateAccountTokens(
+            id: account.id,
+            accessToken: detected.accessToken,
+            refreshToken: detected.refreshToken,
+            idToken: detected.idToken,
+            accountId: detected.accountId,
+            email: detected.email
+        )
+    }
+
+    private func saveDetectedAntigravityCredentials(
+        _ detected: (accessToken: String, refreshToken: String, idToken: String?, email: String?),
+        to account: AccountConfig
+    ) {
+        accessTokenText = detected.accessToken
+        refreshTokenText = detected.refreshToken
+        idTokenText = detected.idToken ?? ""
+        emailText = detected.email ?? ""
+
+        let displayLabel = emailText.isEmpty ? account.label : emailText
+        monitor.updateAccountLabel(id: account.id, newLabel: displayLabel)
+        monitor.updateAccountTokens(
+            id: account.id,
+            accessToken: detected.accessToken,
+            refreshToken: detected.refreshToken,
+            idToken: detected.idToken,
+            email: detected.email
+        )
     }
 }
 
@@ -654,24 +778,24 @@ struct AccountDropDelegate: DropDelegate {
     let item: AccountConfig
     @Binding var draggedItem: AccountConfig?
     let monitor: QuotaMonitor
-    
+
     func performDrop(info: DropInfo) -> Bool {
         self.draggedItem = nil
         return true
     }
-    
+
     func dropEntered(info: DropInfo) {
         guard let dragged = draggedItem else { return }
         if dragged.id != item.id {
             let fromIndex = monitor.config.accounts.firstIndex(where: { $0.id == dragged.id }) ?? 0
             let toIndex = monitor.config.accounts.firstIndex(where: { $0.id == item.id }) ?? 0
-            
+
             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                 monitor.moveAccount(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
             }
         }
     }
-    
+
     func dropUpdated(info: DropInfo) -> DropProposal? {
         return DropProposal(operation: .move)
     }
@@ -685,6 +809,6 @@ struct VisualEffectView: NSViewRepresentable {
         view.state = .active
         return view
     }
-    
+
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

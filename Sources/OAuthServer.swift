@@ -170,6 +170,7 @@ public class OAuthServer {
                         id: accountId,
                         accessToken: tokens.accessToken,
                         refreshToken: tokens.refreshToken,
+                        idToken: tokens.idToken,
                         accountId: tokens.accountId,
                         email: tokens.email
                     )
@@ -182,6 +183,7 @@ public class OAuthServer {
                         id: accountId,
                         accessToken: tokens.accessToken,
                         refreshToken: tokens.refreshToken,
+                        idToken: tokens.idToken,
                         email: tokens.email
                     )
                 }
@@ -191,7 +193,7 @@ public class OAuthServer {
         }
     }
     
-    private func exchangeGoogleCode(code: String) async throws -> (accessToken: String, refreshToken: String, email: String?) {
+    private func exchangeGoogleCode(code: String) async throws -> (accessToken: String, refreshToken: String, idToken: String?, email: String?) {
         let url = URL(string: "https://oauth2.googleapis.com/token")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -222,10 +224,10 @@ public class OAuthServer {
         
         let decoded = try JSONDecoder().decode(TokenResp.self, from: data)
         let email = decoded.id_token.flatMap { SystemCredentialDetector.parseJWTClaim($0, claim: "email") }
-        return (decoded.access_token, decoded.refresh_token, email)
+        return (decoded.access_token, decoded.refresh_token, decoded.id_token, email)
     }
     
-    private func exchangeCodexCode(code: String, verifier: String) async throws -> (accessToken: String, refreshToken: String, accountId: String?, email: String?) {
+    private func exchangeCodexCode(code: String, verifier: String) async throws -> (accessToken: String, refreshToken: String, idToken: String?, accountId: String?, email: String?) {
         let url = URL(string: "https://auth.openai.com/oauth/token")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -263,7 +265,7 @@ public class OAuthServer {
         }
         let email = decoded.id_token.flatMap { SystemCredentialDetector.parseJWTClaim($0, claim: "email") }
         
-        return (decoded.access_token, decoded.refresh_token, accountId, email)
+        return (decoded.access_token, decoded.refresh_token, decoded.id_token, accountId, email)
     }
     
     private func generatePKCEPair() -> (verifier: String, challenge: String) {
