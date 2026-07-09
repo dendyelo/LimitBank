@@ -12,6 +12,11 @@ mkdir -p LimitBank.app/Contents/Resources
 echo "Copying binary..."
 cp .build/release/LimitBank LimitBank.app/Contents/MacOS/LimitBank
 
+if [ -f "AppIcon.icns" ]; then
+    echo "Copying app icon..."
+    cp AppIcon.icns LimitBank.app/Contents/Resources/AppIcon.icns
+fi
+
 echo "Writing Info.plist..."
 cat << 'EOF' > LimitBank.app/Contents/Info.plist
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,6 +25,8 @@ cat << 'EOF' > LimitBank.app/Contents/Info.plist
 <dict>
     <key>CFBundleExecutable</key>
     <string>LimitBank</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.dendyelo.LimitBank</string>
     <key>CFBundleName</key>
