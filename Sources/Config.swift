@@ -245,6 +245,13 @@ public class SystemCredentialDetector {
     }
     
     public static func launchCodexLogin() {
+        // Terminate any running codex processes (daemon / CLI services)
+        let killProcess = Process()
+        killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        killProcess.arguments = ["-f", "codex"]
+        try? killProcess.run()
+        killProcess.waitUntilExit()
+        
         let home = FileManager.default.homeDirectoryForCurrentUser
         let authURL = home.appendingPathComponent(".codex/auth.json")
         let backupURL = home.appendingPathComponent(".codex/auth.json.tmp")
