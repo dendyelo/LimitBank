@@ -349,6 +349,8 @@ struct SettingsView: View {
     @State private var isActivatingCodex = false
     @State private var isActivatingAntigravity = false
     @State private var isLoggingInCodex = false
+    @State private var isLoggingInAntigravity = false
+    @State private var antigravityLoginAttemptId = UUID()
 
     var body: some View {
         NavigationSplitView {
@@ -432,20 +434,29 @@ struct SettingsView: View {
                             }
                         } label: {
                             Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .regular))
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
                         }
                         .menuStyle(.borderlessButton)
-                        .frame(width: 24, height: 24)
+                        .controlSize(.small)
+                        .help("Add account")
 
                         Button(action: {
-                            if let id = selectedAccountId, id != "__general__", monitor.config.accounts.count > 1 {
+                            if let id = selectedAccountId, canDeleteSelectedAccount {
                                 monitor.deleteAccount(id: id)
                                 selectedAccountId = "__general__"
                             }
                         }) {
                             Image(systemName: "minus")
+                                .font(.system(size: 11, weight: .regular))
+                                .frame(width: 24, height: 24)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderless)
-                        .disabled(monitor.config.accounts.count <= 1)
+                        .controlSize(.small)
+                        .disabled(!canDeleteSelectedAccount)
+                        .help("Delete selected account")
 
                         Spacer()
                     }
@@ -555,10 +566,15 @@ struct SettingsView: View {
 
                                             do {
                                                 let didQuitCodex = try await monitor.activateCodexAccount(codexAccount)
-                                                if didQuitCodex {
-                                                    detectAlertMessage = "Codex was closed and this account is now active in ~/.codex/auth.json. You can open Codex now."
+                                                let didOpenCodex = await SystemCredentialDetector.openCodexApp()
+                                                if didOpenCodex, didQuitCodex {
+                                                    detectAlertMessage = "Codex was closed, this account is active, and Codex is opening now."
+                                                } else if didOpenCodex {
+                                                    detectAlertMessage = "This account is active and Codex is opening now."
+                                                } else if didQuitCodex {
+                                                    detectAlertMessage = "Codex was closed and this account is active. Codex could not be opened automatically."
                                                 } else {
-                                                    detectAlertMessage = "This account is now active in ~/.codex/auth.json. You can open Codex now."
+                                                    detectAlertMessage = "This account is active. Codex could not be opened automatically."
                                                 }
                                             } catch {
                                                 detectAlertMessage = "Failed to activate Codex account: \(error.localizedDescription)"
@@ -566,25 +582,33 @@ struct SettingsView: View {
                                             showDetectAlert = true
                                         }
                                     }) {
-                                        Label(isActivatingCodex ? "Activating..." : "Set as Active Codex Session", systemImage: "arrow.triangle.2.circlepath")
+                                        Label(isActivatingCodex ? "Activating..." : "Activate Codex Session", systemImage: "arrow.triangle.2.circlepath")
                                     }
                                     .disabled(isActivatingCodex || accessTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                                    Text("Tip: To switch accounts, import each account once, then use 'Set as Active Codex Session'. LimitBank will close Codex first if it is running. Avoid signing out inside Codex, because that can revoke the saved session.")
+                                    Text("Tip: To switch accounts, import each account once, then use 'Activate Codex Session'. LimitBank will close Codex first if it is running. Avoid signing out inside Codex, because that can revoke the saved session.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)
                                 } else {
                                     Button(action: {
-                                        OAuthServer.shared.startLoginFlow(
+                                        let loginStarted = OAuthServer.shared.startLoginFlow(
                                             accountType: "antigravity",
                                             accountId: account.id
                                         )
-                                        detectAlertMessage = "Opening Google login. Once login finishes, this account will be saved to LimitBank automatically."
-                                        showDetectAlert = true
+                                        if loginStarted {
+                                            let attemptId = UUID()
+                                            antigravityLoginAttemptId = attemptId
+                                            isLoggingInAntigravity = true
+                                            resetAntigravityLoginStateAfterDelay(for: attemptId)
+                                        } else {
+                                            detectAlertMessage = "Failed to open Google login for Antigravity."
+                                            showDetectAlert = true
+                                        }
                                     }) {
-                                        Label("Login & Save with Google", systemImage: "safari")
+                                        Label(isLoggingInAntigravity ? "Waiting for Google Login..." : "Login & Save with Google", systemImage: "safari")
                                     }
+                                    .disabled(isLoggingInAntigravity)
 
                                     Button(action: {
                                         if let detected = SystemCredentialDetector.detectAntigravity() {
@@ -616,10 +640,15 @@ struct SettingsView: View {
 
                                             do {
                                                 let didQuitAntigravity = try await monitor.activateAntigravityAccount(antigravityAccount)
-                                                if didQuitAntigravity {
-                                                    detectAlertMessage = "Antigravity was closed and this account is now active in Keychain. You can open Antigravity now."
+                                                let didOpenAntigravity = await SystemCredentialDetector.openAntigravityApp()
+                                                if didOpenAntigravity, didQuitAntigravity {
+                                                    detectAlertMessage = "Antigravity was closed, this account is active, and Antigravity is opening now."
+                                                } else if didOpenAntigravity {
+                                                    detectAlertMessage = "This account is active and Antigravity is opening now."
+                                                } else if didQuitAntigravity {
+                                                    detectAlertMessage = "Antigravity was closed and this account is active. Antigravity could not be opened automatically."
                                                 } else {
-                                                    detectAlertMessage = "This account is now active in Keychain. You can open Antigravity now."
+                                                    detectAlertMessage = "This account is active. Antigravity could not be opened automatically."
                                                 }
                                             } catch {
                                                 detectAlertMessage = "Failed to activate Antigravity account: \(error.localizedDescription)"
@@ -631,7 +660,7 @@ struct SettingsView: View {
                                     }
                                     .disabled(isActivatingAntigravity || refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                                    Text("Tip: To switch Antigravity accounts, import each account once, then use 'Activate Antigravity Session'. LimitBank will close Antigravity first if it is running.")
+                                    Text("Tip: To switch Antigravity accounts, import each account once, then use 'Activate Antigravity Session'. LimitBank will close Antigravity first if it is running, then reopen it after the account is ready.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)
@@ -702,6 +731,12 @@ struct SettingsView: View {
                 .padding(.vertical, 12)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .limitBankOAuthLoginDidSave)) { notification in
+            handleOAuthLoginSaved(notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .limitBankOAuthLoginDidFail)) { notification in
+            handleOAuthLoginFailed(notification)
+        }
         .alert(isPresented: $showDetectAlert) {
             Alert(title: Text("System Auto-Detect"), message: Text(detectAlertMessage), dismissButton: .default(Text("OK")))
         }
@@ -723,6 +758,46 @@ struct SettingsView: View {
             emailText = email
         } else {
             emailText = ""
+        }
+    }
+
+    private var canDeleteSelectedAccount: Bool {
+        guard let selectedAccountId, selectedAccountId != "__general__" else { return false }
+        return monitor.config.accounts.count > 1
+    }
+
+    private func handleOAuthLoginSaved(_ notification: Notification) {
+        guard notification.userInfo?[OAuthNotificationKey.accountType] as? String == "antigravity" else { return }
+
+        let accountId = notification.userInfo?[OAuthNotificationKey.accountId] as? String
+        antigravityLoginAttemptId = UUID()
+        isLoggingInAntigravity = false
+
+        if selectedAccountId == accountId {
+            loadAccountData()
+        }
+
+        detectAlertMessage = "Log in Antigravity berhasil. Akun sudah disimpan ke LimitBank."
+        showDetectAlert = true
+    }
+
+    private func handleOAuthLoginFailed(_ notification: Notification) {
+        guard notification.userInfo?[OAuthNotificationKey.accountType] as? String == "antigravity" else { return }
+
+        antigravityLoginAttemptId = UUID()
+        isLoggingInAntigravity = false
+
+        let error = notification.userInfo?[OAuthNotificationKey.error] as? String
+        detectAlertMessage = "Antigravity login failed: \(error ?? "Unknown error")."
+        showDetectAlert = true
+    }
+
+    private func resetAntigravityLoginStateAfterDelay(for attemptId: UUID) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000_000)
+            if antigravityLoginAttemptId == attemptId {
+                isLoggingInAntigravity = false
+            }
         }
     }
 

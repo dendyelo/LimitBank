@@ -3,6 +3,18 @@ import Network
 import CryptoKit
 import AppKit
 
+extension Notification.Name {
+    static let limitBankOAuthLoginDidSave = Notification.Name("LimitBankOAuthLoginDidSave")
+    static let limitBankOAuthLoginDidFail = Notification.Name("LimitBankOAuthLoginDidFail")
+}
+
+enum OAuthNotificationKey {
+    static let accountType = "accountType"
+    static let accountId = "accountId"
+    static let email = "email"
+    static let error = "error"
+}
+
 public class OAuthServer {
     public static let shared = OAuthServer()
     
@@ -13,7 +25,8 @@ public class OAuthServer {
     
     private init() {}
     
-    public func startLoginFlow(accountType: String, accountId: String) {
+    @discardableResult
+    public func startLoginFlow(accountType: String, accountId: String) -> Bool {
         // Stop any running listener first
         self.stop()
         
@@ -35,6 +48,7 @@ public class OAuthServer {
                     AppLogger.log("OAuth redirect server listening on port 12111")
                 case .failed(let error):
                     AppLogger.log("OAuth redirect server failed to start: \(error)")
+                    self.postLoginFailure(accountType: accountType, accountId: accountId, error: error.localizedDescription)
                     self.stop()
                 default:
                     break
@@ -58,11 +72,19 @@ public class OAuthServer {
             }
             
             if let url = URL(string: authURLString) {
-                NSWorkspace.shared.open(url)
+                let didOpenBrowser = NSWorkspace.shared.open(url)
+                if !didOpenBrowser {
+                    self.stop()
+                }
+                return didOpenBrowser
             }
         } catch {
             AppLogger.log("Failed to start OAuth server: \(error)")
+            postLoginFailure(accountType: accountType, accountId: accountId, error: error.localizedDescription)
         }
+
+        self.stop()
+        return false
     }
     
     public func stop() {
@@ -124,21 +146,111 @@ public class OAuthServer {
     
     private func sendSuccessResponse(to connection: NWConnection) {
         let html = """
+        <!doctype html>
         <html>
         <head>
             <title>LimitBank Auth</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body { font-family: -apple-system, sans-serif; text-align: center; padding-top: 60px; background-color: #f5f5f7; color: #1d1d1f; }
-                .card { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-                h2 { color: #10b981; margin-top: 0; }
-                p { font-size: 14px; color: #86868b; line-height: 1.5; }
+                :root {
+                    color-scheme: light dark;
+                    --bg: #f5f5f7;
+                    --panel: rgba(255, 255, 255, 0.88);
+                    --text: #1d1d1f;
+                    --muted: #6e6e73;
+                    --accent: #0a7d43;
+                    --line: rgba(0, 0, 0, 0.08);
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    :root {
+                        --bg: #1f2023;
+                        --panel: rgba(42, 43, 47, 0.9);
+                        --text: #f5f5f7;
+                        --muted: #b5b5ba;
+                        --accent: #32d583;
+                        --line: rgba(255, 255, 255, 0.12);
+                    }
+                }
+
+                * {
+                    box-sizing: border-box;
+                }
+
+                body {
+                    min-height: 100vh;
+                    margin: 0;
+                    display: grid;
+                    place-items: center;
+                    padding: 28px;
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+                    background: var(--bg);
+                    color: var(--text);
+                }
+
+                .card {
+                    width: min(420px, 100%);
+                    padding: 34px 30px 30px;
+                    text-align: center;
+                    background: var(--panel);
+                    border: 1px solid var(--line);
+                    border-radius: 18px;
+                    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+                    backdrop-filter: blur(18px);
+                }
+
+                .icon {
+                    position: relative;
+                    width: 54px;
+                    height: 54px;
+                    margin: 0 auto 18px;
+                    border-radius: 50%;
+                    background: var(--accent);
+                }
+
+                .icon::after {
+                    content: "";
+                    position: absolute;
+                    left: 18px;
+                    top: 14px;
+                    width: 15px;
+                    height: 24px;
+                    border: solid white;
+                    border-width: 0 4px 4px 0;
+                    transform: rotate(45deg);
+                }
+
+                h1 {
+                    margin: 0;
+                    font-size: 28px;
+                    line-height: 1.15;
+                    font-weight: 700;
+                    letter-spacing: 0;
+                }
+
+                p {
+                    margin: 12px 0 0;
+                    font-size: 15px;
+                    line-height: 1.5;
+                    color: var(--muted);
+                }
+
+                .app {
+                    margin-top: 22px;
+                    padding-top: 18px;
+                    border-top: 1px solid var(--line);
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: var(--muted);
+                }
             </style>
         </head>
         <body>
             <div class="card">
-                <h2>LimitBank Login Berhasil!</h2>
-                <p>Otentikasi berhasil dilakukan. Token Anda telah disimpan secara mandiri ke profil aplikasi menubar LimitBank.</p>
-                <p>Anda sekarang dapat menutup halaman browser ini dan kembali ke menu bar.</p>
+                <div class="icon" aria-hidden="true"></div>
+                <h1>Log in berhasil</h1>
+                <p>Silakan tutup halaman ini dan kembali ke pengaturan LimitBank.</p>
+                <div class="app">LimitBank</div>
             </div>
         </body>
         </html>
@@ -174,6 +286,8 @@ public class OAuthServer {
                         accountId: tokens.accountId,
                         email: tokens.email
                     )
+                    self.updateSavedAccountLabel(accountId: accountId, email: tokens.email)
+                    self.postLoginSaved(accountType: accountType, accountId: accountId, email: tokens.email)
                 }
             } else {
                 let tokens = try await exchangeGoogleCode(code: code)
@@ -186,10 +300,52 @@ public class OAuthServer {
                         idToken: tokens.idToken,
                         email: tokens.email
                     )
+                    self.updateSavedAccountLabel(accountId: accountId, email: tokens.email)
+                    self.postLoginSaved(accountType: accountType, accountId: accountId, email: tokens.email)
                 }
             }
         } catch {
             AppLogger.log("Failed to exchange OAuth code: \(error)")
+            await MainActor.run {
+                self.postLoginFailure(accountType: accountType, accountId: accountId, error: error.localizedDescription)
+            }
+        }
+    }
+
+    @MainActor
+    private func updateSavedAccountLabel(accountId: String, email: String?) {
+        let trimmedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedEmail.isEmpty else { return }
+        QuotaMonitor.shared.updateAccountLabel(id: accountId, newLabel: trimmedEmail)
+    }
+
+    private func postLoginSaved(accountType: String, accountId: String, email: String?) {
+        var userInfo: [String: String] = [
+            OAuthNotificationKey.accountType: accountType,
+            OAuthNotificationKey.accountId: accountId
+        ]
+
+        let trimmedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedEmail.isEmpty {
+            userInfo[OAuthNotificationKey.email] = trimmedEmail
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .limitBankOAuthLoginDidSave, object: self, userInfo: userInfo)
+        }
+    }
+
+    private func postLoginFailure(accountType: String, accountId: String, error: String) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .limitBankOAuthLoginDidFail,
+                object: self,
+                userInfo: [
+                    OAuthNotificationKey.accountType: accountType,
+                    OAuthNotificationKey.accountId: accountId,
+                    OAuthNotificationKey.error: error
+                ]
+            )
         }
     }
     

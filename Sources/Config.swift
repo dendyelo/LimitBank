@@ -280,6 +280,44 @@ public class SystemCredentialDetector {
         }
     }
 
+    public static func openCodexApp() async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                process.arguments = ["-a", "Codex"]
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    continuation.resume(returning: process.terminationStatus == 0)
+                } catch {
+                    AppLogger.log("Failed to open Codex app: \(error.localizedDescription)")
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
+    public static func openAntigravityApp() async -> Bool {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                process.arguments = ["-a", "Antigravity"]
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    continuation.resume(returning: process.terminationStatus == 0)
+                } catch {
+                    AppLogger.log("Failed to open Antigravity app: \(error.localizedDescription)")
+                    continuation.resume(returning: false)
+                }
+            }
+        }
+    }
+
     @MainActor
     @discardableResult
     public static func quitRunningAntigravityApps(timeout: TimeInterval = 8) async throws -> Bool {
