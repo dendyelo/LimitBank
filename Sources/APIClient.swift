@@ -123,7 +123,31 @@ public class APIClient {
                         AppLogger.log("Successfully refreshed Codex OpenAI token (rotated) for: \(account.label)")
                         syncRotatedTokensToSystemFiles(activeAccount)
                     } catch {
-                        return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed: \(error.localizedDescription)"), nil)
+                        if let recovered = tryToRecoverCodexTokens(for: activeAccount) {
+                            AppLogger.log("Auto-healing: Recovered fresh Codex tokens from ~/.codex/auth.json for: \(account.label)")
+                            activeAccount.accessToken = recovered.accessToken
+                            activeAccount.refreshToken = recovered.refreshToken
+                            activeAccount.accountId = recovered.accountId
+                            activeAccount.expiresAt = nil
+                            configUpdated = true
+                            
+                            do {
+                                let retryResp = try await refreshCodexToken(refreshToken: activeAccount.refreshToken)
+                                activeAccount.accessToken = retryResp.access_token
+                                activeAccount.refreshToken = retryResp.refresh_token
+                                activeAccount.expiresAt = Date().addingTimeInterval(Double(retryResp.expires_in))
+                                if let idToken = retryResp.id_token,
+                                   let email = SystemCredentialDetector.parseJWTClaim(idToken, claim: "email") {
+                                    activeAccount.email = email
+                                }
+                                configUpdated = true
+                                syncRotatedTokensToSystemFiles(activeAccount)
+                            } catch {
+                                return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed after recovery: \(error.localizedDescription)"), configUpdated ? activeAccount : nil)
+                            }
+                        } else {
+                            return (QuotaStatus(id: account.id, error: "Auth: OpenAI Token Refresh failed: \(error.localizedDescription)"), nil)
+                        }
                     }
                 } else if account.accessToken.isEmpty {
                     return (QuotaStatus(id: account.id, error: "Configuration: Missing Access Token"), nil)
@@ -700,5 +724,16 @@ public class APIClient {
                 AppLogger.log("Synchronized rotated Codex tokens back to ~/.codex/auth.json")
             }
         }
+    }
+    
+    private func tryToRecoverCodexTokens(for account: AccountConfig) -> (accessToken: String, refreshToken: String, accountId: String?)? {
+        guard let detected = SystemCredentialDetector.detectCodex() else { return nil }
+        
+        let accEmail = account.email?.lowercased() ?? ""
+        let detEmail = detected.email?.lowercased() ?? ""
+        guard !detEmail.isEmpty && accEmail == detEmail else { return nil }
+        guard detected.refreshToken != account.refreshToken else { return nil }
+        
+        return (detected.accessToken, detected.refreshToken, detected.accountId)
     }
 }

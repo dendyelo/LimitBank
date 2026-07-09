@@ -231,30 +231,38 @@ public class QuotaMonitor: ObservableObject {
     public func autoDetectAllCredentials() {
         var changed = false
         for (idx, acc) in config.accounts.enumerated() {
+            let accEmail = acc.email?.lowercased() ?? ""
+            
             if acc.type == "codex" {
                 if let detected = SystemCredentialDetector.detectCodex() {
-                    config.accounts[idx].accessToken = detected.accessToken
-                    config.accounts[idx].refreshToken = detected.refreshToken
-                    if let accId = detected.accountId {
-                        config.accounts[idx].accountId = accId
+                    let detEmail = detected.email?.lowercased() ?? ""
+                    if accEmail == detEmail || accEmail.isEmpty {
+                        config.accounts[idx].accessToken = detected.accessToken
+                        config.accounts[idx].refreshToken = detected.refreshToken
+                        if let accId = detected.accountId {
+                            config.accounts[idx].accountId = accId
+                        }
+                        if let email = detected.email {
+                            config.accounts[idx].email = email
+                            config.accounts[idx].label = email
+                        }
+                        config.accounts[idx].expiresAt = nil // clear expiry
+                        changed = true
                     }
-                    if let email = detected.email {
-                        config.accounts[idx].email = email
-                        config.accounts[idx].label = email
-                    }
-                    config.accounts[idx].expiresAt = nil // clear expiry
-                    changed = true
                 }
             } else if acc.type == "antigravity" {
                 if let detected = SystemCredentialDetector.detectAntigravity() {
-                    config.accounts[idx].accessToken = detected.accessToken
-                    config.accounts[idx].refreshToken = detected.refreshToken
-                    if let email = detected.email {
-                        config.accounts[idx].email = email
-                        config.accounts[idx].label = email
+                    let detEmail = detected.email?.lowercased() ?? ""
+                    if accEmail == detEmail || accEmail.isEmpty {
+                        config.accounts[idx].accessToken = detected.accessToken
+                        config.accounts[idx].refreshToken = detected.refreshToken
+                        if let email = detected.email {
+                            config.accounts[idx].email = email
+                            config.accounts[idx].label = email
+                        }
+                        config.accounts[idx].expiresAt = nil // clear expiry
+                        changed = true
                     }
-                    config.accounts[idx].expiresAt = nil // clear expiry
-                    changed = true
                 }
             }
         }
