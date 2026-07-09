@@ -480,19 +480,7 @@ struct SettingsView: View {
                                 Text("Both Icon and Text").tag("both")
                             }
                         }
-                        
-                        Section("Auto-Detect Options") {
-                            Button(action: {
-                                monitor.autoDetectAllCredentials()
-                                detectAlertMessage = "Triggered auto-detection. Checked Keychain & Local Credentials for all accounts."
-                                showDetectAlert = true
-                            }) {
-                                Label("Detect & Import All Accounts", systemImage: "wand.and.stars")
-                            }
-                            Text("LimitBank will search your local system files (~/.codex/auth.json) and Keychain (Gemini/Antigravity credentials) to set up all accounts at once.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
+
                     }
                     .formStyle(.grouped)
                     .padding(.vertical, 8)
