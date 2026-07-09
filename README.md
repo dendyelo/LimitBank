@@ -1,8 +1,8 @@
-# LimitBank 🏦
+# LimitBank
 
 **LimitBank** is a lightweight, sleek macOS menu bar utility designed for developers to monitor their API quotas and token limits for **Antigravity (Google Gemini)** and **Codex (OpenAI)** accounts in real time.
 
-## Screenshots 📸
+## Screenshots
 
 <p align="center">
   <img src="screenshots/popover.png" alt="LimitBank Popover Status" width="220" />
@@ -10,7 +10,7 @@
   <img src="screenshots/settings.png" alt="LimitBank Settings" width="480" />
 </p>
 
-## Features 🚀
+## Features
 
 - **Real-Time Quota Monitoring**: Tracks hour, day, week, and monthly limits with beautiful progress bars directly from the macOS menu bar.
 - **Multi-Account Support**: Manage multiple accounts simultaneously. Easily switch active sessions for both Codex and Antigravity.
@@ -19,7 +19,7 @@
 - **Sleek Integration**: Automatically quits and restarts Codex or Antigravity applications when switching active sessions to apply credentials instantly.
 - **OAuth Auto-Sync**: Built-in OAuth server automatically captures browser login codes and updates configuration forms in real time.
 
-## Installation & Build 🛠️
+## Installation & Build
 
 To compile and package the app as a native macOS bundle:
 
@@ -33,7 +33,7 @@ To compile and package the app as a native macOS bundle:
    open LimitBank.app
    ```
 
-## Configuration ⚙️
+## Configuration
 
 - **Antigravity Accounts**: Simply click **Sign In via Google (Browser)** in settings to authenticate and monitor your Gemini quotas.
 - **Codex Accounts**: Click **Launch Codex CLI Login** to switch between OpenAI accounts cleanly without revoking tokens on the server.
