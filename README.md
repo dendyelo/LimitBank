@@ -1,6 +1,6 @@
 # LimitBank
 
-**LimitBank** is a lightweight, sleek macOS menu bar utility designed for developers to monitor their API quotas and token limits for **Antigravity (Google Gemini)** and **Codex (OpenAI)** accounts in real time.
+LimitBank is a lightweight macOS menu bar utility designed for developers to monitor API quotas and token limits for Google Gemini (Antigravity) and OpenAI (Codex) accounts in real time.
 
 ## Screenshots
 
@@ -12,31 +12,40 @@
 
 ## Features
 
-- **Real-Time Quota Monitoring**: Tracks hour, day, week, and monthly limits with beautiful progress bars directly from the macOS menu bar.
-- **Multi-Account Support**: Manage multiple accounts simultaneously. Easily switch active sessions for both Codex and Antigravity.
-- **Native macOS Experience**: Designed with a clean, responsive SwiftUI popover, monochrome checkmarks, and native-feeling settings sidebar.
-- **Independent Sessions**: Google Antigravity tokens are kept separate from IDE instances, allowing you to use multiple accounts without conflicts.
-- **Sleek Integration**: Automatically quits and restarts Codex or Antigravity applications when switching active sessions to apply credentials instantly.
-- **OAuth Auto-Sync**: Built-in OAuth server automatically captures browser login codes and updates configuration forms in real time.
+- **Real-Time Quota Monitoring**: Tracks hourly, daily, weekly, and monthly limits with high-precision progress indicators directly from the macOS status bar.
+- **Multi-Account Management**: Supports registering and monitoring up to 5 concurrent account slots (2 Codex slots, 3 Antigravity slots).
+- **Native macOS Interface**: Designed with SwiftUI to provide a clean, responsive popover and a native system settings sidebar.
+- **Isolated Sessions**: Authentication tokens are maintained independently of other applications and IDE extensions, avoiding credentials conflicts.
+- **Automatic Sync and Integration**: Detects active sessions and performs background OAuth token refreshes. Integrates helper logic to refresh target application states upon session switching.
+- **OAuth Loopback Server**: Runs a secure local loopback OAuth server on port 12111 to facilitate automated browser sign-in.
 
-## Installation & Build
+## System Requirements
 
-To compile and package the app as a native macOS bundle:
+- macOS 14.0 (Sonoma) or later
+- Swift 5.9 or later (for manual compilation)
 
-1. Clone the repository to your local machine.
-2. Build the `.app` bundle by running the helper script:
+## Installation and Build
+
+To compile and package LimitBank as a native macOS application bundle:
+
+1. Clone this repository to your local machine.
+2. Build the application structure by executing the build script:
    ```bash
    ./build_app.sh
    ```
-3. Open the newly created `LimitBank.app` in your workspace directory:
+3. Open the compiled application bundle:
    ```bash
    open LimitBank.app
    ```
 
 ## Configuration
 
-- **Antigravity Accounts**: Simply click **Sign In via Google (Browser)** in settings to authenticate and monitor your Gemini quotas.
-- **Codex Accounts**: Click **Launch Codex CLI Login** to switch between OpenAI accounts cleanly without revoking tokens on the server.
+- **Antigravity (Google Gemini) Accounts**: Select the account slot in Settings and click **Sign In via Google (Browser)** to complete authorization.
+- **Codex (OpenAI) Accounts**: Click **Launch Codex CLI Login** to authenticate and switch active sessions.
+
+## Privacy and Security
+
+All authentication tokens, credentials, and state information are stored locally on your device within the file `~/.limitbank.json`. LimitBank does not transmit credentials or telemetry to any external servers.
 
 ---
-Created by [dendyelo](https://github.com/dendyelo). Built with SwiftUI.
+Developed by [dendyelo](https://github.com/dendyelo). Built with Swift and SwiftUI.
