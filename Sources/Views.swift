@@ -514,24 +514,28 @@ struct SettingsView: View {
                                         Task { @MainActor in
                                             isLoggingInCodex = true
                                             defer { isLoggingInCodex = false }
+                                            var shouldReopenChatGPT = false
 
                                             do {
+                                                shouldReopenChatGPT = try await SystemCredentialDetector.quitRunningCodexApps()
                                                 try await SystemCredentialDetector.loginCodexAndWait()
-                                                guard let detected = SystemCredentialDetector.detectCodex() else {
-                                                    detectAlertMessage = "Codex login finished, but no active session was found in ~/.codex/auth.json."
-                                                    showDetectAlert = true
-                                                    return
+                                                guard let detected = SystemCredentialDetector.detectCodex(includeOpenCodeFallback: false) else {
+                                                    throw SystemCredentialDetector.CodexLoginError.missingFileCredentials
                                                 }
 
                                                 saveDetectedCodexCredentials(detected, to: account)
-                                                detectAlertMessage = "Codex account saved to LimitBank."
+                                                detectAlertMessage = "ChatGPT sign-in succeeded. The Codex account was saved to LimitBank."
                                             } catch {
-                                                detectAlertMessage = "Codex login failed: \(error.localizedDescription)"
+                                                detectAlertMessage = "ChatGPT sign-in failed: \(error.localizedDescription)"
+                                            }
+
+                                            if shouldReopenChatGPT {
+                                                _ = await SystemCredentialDetector.openCodexApp()
                                             }
                                             showDetectAlert = true
                                         }
                                     }) {
-                                        Label(isLoggingInCodex ? "Waiting for Login..." : "Login, Import & Save", systemImage: "terminal")
+                                        Label(isLoggingInCodex ? "Waiting for ChatGPT Sign-In..." : "Sign in with ChatGPT & Save", systemImage: "person.crop.circle.badge.checkmark")
                                     }
                                     .disabled(isLoggingInCodex || isActivatingCodex)
 
@@ -541,7 +545,7 @@ struct SettingsView: View {
                                             detectAlertMessage = "Codex account imported and saved to LimitBank."
                                             showDetectAlert = true
                                         } else {
-                                            detectAlertMessage = "No active Codex session found. Run 'Login, Import & Save' first."
+                                            detectAlertMessage = "No active Codex session found. Run 'Sign in with ChatGPT & Save' first."
                                             showDetectAlert = true
                                         }
                                     }) {
@@ -568,13 +572,13 @@ struct SettingsView: View {
                                                 let didQuitCodex = try await monitor.activateCodexAccount(codexAccount)
                                                 let didOpenCodex = await SystemCredentialDetector.openCodexApp()
                                                 if didOpenCodex, didQuitCodex {
-                                                    detectAlertMessage = "Codex was closed, this account is active, and Codex is opening now."
+                                                    detectAlertMessage = "ChatGPT was closed, this Codex account is active, and ChatGPT is opening now."
                                                 } else if didOpenCodex {
-                                                    detectAlertMessage = "This account is active and Codex is opening now."
+                                                    detectAlertMessage = "This Codex account is active and ChatGPT is opening now."
                                                 } else if didQuitCodex {
-                                                    detectAlertMessage = "Codex was closed and this account is active. Codex could not be opened automatically."
+                                                    detectAlertMessage = "ChatGPT was closed and this Codex account is active. ChatGPT could not be opened automatically."
                                                 } else {
-                                                    detectAlertMessage = "This account is active. Codex could not be opened automatically."
+                                                    detectAlertMessage = "This Codex account is active. ChatGPT could not be opened automatically."
                                                 }
                                             } catch {
                                                 detectAlertMessage = "Failed to activate Codex account: \(error.localizedDescription)"
@@ -586,7 +590,7 @@ struct SettingsView: View {
                                     }
                                     .disabled(isActivatingCodex || accessTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || refreshTokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-                                    Text("Tip: To switch accounts, import each account once, then use 'Activate Codex Session'. LimitBank will close Codex first if it is running. Avoid signing out inside Codex, because that can revoke the saved session.")
+                                    Text("Tip: Sign in and save each account once, then use 'Activate Codex Session' to switch. LimitBank will close and reopen ChatGPT around session changes. Avoid signing out inside ChatGPT, because that can revoke the saved Codex session.")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                         .padding(.top, 4)

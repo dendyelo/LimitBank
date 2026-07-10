@@ -104,6 +104,22 @@ public class ConfigManager {
 }
 
 public class SystemCredentialDetector {
+    private static let codexAppBundleIdentifier = "com.openai.codex"
+
+    private static var codexHomeDirectory: URL {
+        if let configuredHome = ProcessInfo.processInfo.environment["CODEX_HOME"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !configuredHome.isEmpty {
+            return URL(fileURLWithPath: NSString(string: configuredHome).expandingTildeInPath, isDirectory: true)
+        }
+
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)
+    }
+
+    private static var codexAuthURL: URL {
+        codexHomeDirectory.appendingPathComponent("auth.json")
+    }
+
     public static func parseJWTClaim(_ token: String, claim: String) -> String? {
         let parts = token.components(separatedBy: ".")
         guard parts.count == 3 else { return nil }
@@ -134,12 +150,12 @@ public class SystemCredentialDetector {
         return json[claim] as? String
     }
 
-    public static func detectCodex() -> (accessToken: String, refreshToken: String, idToken: String?, accountId: String?, email: String?)? {
+    public static func detectCodex(includeOpenCodeFallback: Bool = true) -> (accessToken: String, refreshToken: String, idToken: String?, accountId: String?, email: String?)? {
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        let paths = [
-            homeDirectory.appendingPathComponent(".codex/auth.json"),
-            homeDirectory.appendingPathComponent(".local/share/opencode/auth.json")
-        ]
+        var paths = [codexAuthURL]
+        if includeOpenCodeFallback {
+            paths.append(homeDirectory.appendingPathComponent(".local/share/opencode/auth.json"))
+        }
 
         for path in paths {
             guard FileManager.default.fileExists(atPath: path.path),
@@ -158,8 +174,11 @@ public class SystemCredentialDetector {
 
             if let auth = try? JSONDecoder().decode(CodexAuth.self, from: data),
                let tokens = auth.tokens {
+                let accessToken = tokens.access_token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let refreshToken = tokens.refresh_token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !accessToken.isEmpty, !refreshToken.isEmpty else { continue }
                 let email = tokens.id_token.flatMap { parseJWTClaim($0, claim: "email") }
-                return (tokens.access_token ?? "", tokens.refresh_token ?? "", tokens.id_token, tokens.account_id, email)
+                return (accessToken, refreshToken, tokens.id_token, tokens.account_id, email)
             }
 
             // Try OpenCode format
@@ -176,9 +195,12 @@ public class SystemCredentialDetector {
 
             if let auth = try? JSONDecoder().decode(OpenCodeAuth.self, from: data),
                let openai = auth.openai {
+                let accessToken = openai.access?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let refreshToken = openai.refresh?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !accessToken.isEmpty, !refreshToken.isEmpty else { continue }
                 let idToken = openai.id_token ?? openai.idToken ?? ""
                 let email = idToken.isEmpty ? nil : parseJWTClaim(idToken, claim: "email")
-                return (openai.access ?? "", openai.refresh ?? "", idToken.isEmpty ? nil : idToken, openai.accountId, email)
+                return (accessToken, refreshToken, idToken.isEmpty ? nil : idToken, openai.accountId, email)
             }
         }
 
@@ -205,7 +227,21 @@ public class SystemCredentialDetector {
         public var errorDescription: String? {
             switch self {
             case .timedOut(let appNames):
-                return "Codex is still running: \(appNames.joined(separator: ", ")). Quit Codex manually, then activate the account again."
+                return "ChatGPT is still running: \(appNames.joined(separator: ", ")). Quit ChatGPT manually, then activate the account again."
+            }
+        }
+    }
+
+    public enum CodexLoginError: LocalizedError {
+        case executableNotFound
+        case missingFileCredentials
+
+        public var errorDescription: String? {
+            switch self {
+            case .executableNotFound:
+                return "Codex CLI was not found. Install the ChatGPT desktop app or Codex CLI, then try again."
+            case .missingFileCredentials:
+                return "ChatGPT sign-in finished, but Codex did not create a usable auth.json file."
             }
         }
     }
@@ -267,34 +303,54 @@ public class SystemCredentialDetector {
         NSWorkspace.shared.runningApplications.filter { app in
             guard !app.isTerminated else { return false }
 
-            if let bundleIdentifier = app.bundleIdentifier?.lowercased(),
-               bundleIdentifier.contains("codex") {
+            if app.bundleIdentifier?.lowercased() == codexAppBundleIdentifier {
                 return true
             }
 
+            guard app.bundleIdentifier == nil else { return false }
             guard let name = app.localizedName?.lowercased() else {
                 return false
             }
 
-            return name == "codex" || name.hasPrefix("codex ")
+            return name == "codex" || name == "chatgpt"
         }
     }
 
     public static func openCodexApp() async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                process.arguments = ["-a", "Codex"]
+                var launchTargets = [["-b", codexAppBundleIdentifier]]
+                let appPaths = [
+                    "/Applications/ChatGPT.app",
+                    "/Applications/Codex.app",
+                    FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/ChatGPT.app").path,
+                    FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Codex.app").path
+                ]
+                launchTargets.append(contentsOf: appPaths
+                    .filter {
+                        Bundle(url: URL(fileURLWithPath: $0))?.bundleIdentifier?.lowercased() == codexAppBundleIdentifier
+                    }
+                    .map { [$0] })
+                launchTargets.append(["-a", "Codex"])
 
-                do {
-                    try process.run()
-                    process.waitUntilExit()
-                    continuation.resume(returning: process.terminationStatus == 0)
-                } catch {
-                    AppLogger.log("Failed to open Codex app: \(error.localizedDescription)")
-                    continuation.resume(returning: false)
+                for arguments in launchTargets {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                    process.arguments = arguments
+
+                    do {
+                        try process.run()
+                        process.waitUntilExit()
+                        if process.terminationStatus == 0 {
+                            continuation.resume(returning: true)
+                            return
+                        }
+                    } catch {
+                        AppLogger.log("Failed to open ChatGPT/Codex using \(arguments.joined(separator: " ")): \(error.localizedDescription)")
+                    }
                 }
+
+                continuation.resume(returning: false)
             }
         }
     }
@@ -371,9 +427,8 @@ public class SystemCredentialDetector {
             throw CodexAuthWriteError.missingTokens
         }
 
-        let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        let codexDir = homeDirectory.appendingPathComponent(".codex")
-        let authURL = codexDir.appendingPathComponent("auth.json")
+        let codexDir = codexHomeDirectory
+        let authURL = codexAuthURL
 
         var root: [String: Any] = [:]
         if FileManager.default.fileExists(atPath: authURL.path),
@@ -399,6 +454,9 @@ public class SystemCredentialDetector {
         }
 
         root["tokens"] = tokens
+        root["auth_mode"] = "chatgpt"
+        root["OPENAI_API_KEY"] = NSNull()
+        root["last_refresh"] = ISO8601DateFormatter().string(from: Date())
 
         try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
@@ -571,10 +629,36 @@ public class SystemCredentialDetector {
         return nil
     }
 
-    private static func codexLoginProcess() -> Process {
+    private static func codexExecutableURL() -> URL? {
+        var candidates: [URL] = []
+        var searchPaths = ProcessInfo.processInfo.environment["PATH"]?
+            .split(separator: ":")
+            .map(String.init) ?? []
+        searchPaths.append(contentsOf: ["/opt/homebrew/bin", "/usr/local/bin"])
+
+        for directory in searchPaths {
+            candidates.append(URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent("codex"))
+        }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        candidates.append(contentsOf: [
+            URL(fileURLWithPath: "/Applications/ChatGPT.app/Contents/Resources/codex"),
+            URL(fileURLWithPath: "/Applications/Codex.app/Contents/Resources/codex"),
+            home.appendingPathComponent("Applications/ChatGPT.app/Contents/Resources/codex"),
+            home.appendingPathComponent("Applications/Codex.app/Contents/Resources/codex")
+        ])
+
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    private static func codexLoginProcess() throws -> Process {
+        guard let executableURL = codexExecutableURL() else {
+            throw CodexLoginError.executableNotFound
+        }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["codex", "login"]
+        process.executableURL = executableURL
+        process.arguments = ["login", "-c", "cli_auth_credentials_store=\"file\""]
 
         var env = ProcessInfo.processInfo.environment
         let brewPath = "/opt/homebrew/bin:/usr/local/bin"
@@ -587,35 +671,47 @@ public class SystemCredentialDetector {
         return process
     }
 
-    private static func prepareCodexLoginFileSlot() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let authURL = home.appendingPathComponent(".codex/auth.json")
-        let backupURL = home.appendingPathComponent(".codex/auth.json.tmp")
-
-        if FileManager.default.fileExists(atPath: authURL.path) {
-            try? FileManager.default.removeItem(atPath: backupURL.path)
-            try? FileManager.default.moveItem(at: authURL, to: backupURL)
-        }
+    private static func prepareCodexLoginFileSlot() throws -> Data? {
+        guard FileManager.default.fileExists(atPath: codexAuthURL.path) else { return nil }
+        let previousAuth = try Data(contentsOf: codexAuthURL)
+        try FileManager.default.removeItem(at: codexAuthURL)
+        return previousAuth
     }
 
-    public static func launchCodexLogin() {
-        prepareCodexLoginFileSlot()
-        try? codexLoginProcess().run()
+    private static func restoreCodexLoginFile(_ previousAuth: Data?) {
+        do {
+            if FileManager.default.fileExists(atPath: codexAuthURL.path) {
+                try FileManager.default.removeItem(at: codexAuthURL)
+            }
+            guard let previousAuth else { return }
+            try FileManager.default.createDirectory(at: codexHomeDirectory, withIntermediateDirectories: true)
+            try previousAuth.write(to: codexAuthURL, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: codexAuthURL.path)
+        } catch {
+            AppLogger.log("Failed to restore the previous Codex login after an unsuccessful sign-in: \(error.localizedDescription)")
+        }
     }
 
     public static func loginCodexAndWait() async throws {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                prepareCodexLoginFileSlot()
-                let process = codexLoginProcess()
+                var previousAuth: Data?
 
                 do {
+                    previousAuth = try prepareCodexLoginFileSlot()
+                    let process = try codexLoginProcess()
                     try process.run()
                     process.waitUntilExit()
 
                     if process.terminationStatus == 0 {
-                        continuation.resume()
+                        if detectCodex(includeOpenCodeFallback: false) != nil {
+                            continuation.resume()
+                        } else {
+                            restoreCodexLoginFile(previousAuth)
+                            continuation.resume(throwing: CodexLoginError.missingFileCredentials)
+                        }
                     } else {
+                        restoreCodexLoginFile(previousAuth)
                         continuation.resume(throwing: NSError(
                             domain: "SystemCredentialDetector",
                             code: Int(process.terminationStatus),
@@ -623,6 +719,7 @@ public class SystemCredentialDetector {
                         ))
                     }
                 } catch {
+                    restoreCodexLoginFile(previousAuth)
                     continuation.resume(throwing: error)
                 }
             }

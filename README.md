@@ -36,7 +36,7 @@ The app stores account sessions in a local account bank, refreshes quota data in
 
 - **Menu bar quota dashboard**: view remaining 5-hour and weekly limits at a glance.
 - **Multi-account bank**: add, remove, reorder, save, and monitor multiple Codex and Antigravity accounts.
-- **Codex session switching**: save Codex CLI sessions, activate a selected account, refresh tokens, update `~/.codex/auth.json`, quit Codex, and reopen it when ready.
+- **Codex session switching**: save ChatGPT-backed Codex sessions, activate a selected account, refresh tokens, update `~/.codex/auth.json`, quit ChatGPT, and reopen it when ready.
 - **Antigravity session switching**: save Google login sessions, update the macOS Keychain entry used by Antigravity, quit Antigravity, and reopen it when ready.
 - **Background refresh**: refresh quota data automatically with configurable intervals.
 - **Transient error handling**: retry temporary Codex quota timeouts and keep the last valid quota on screen when the network is briefly unstable.
@@ -47,12 +47,13 @@ The app stores account sessions in a local account bank, refreshes quota data in
 
 | Service | What LimitBank Tracks | Session Activation |
 | --- | --- | --- |
-| Codex | Plan, 5-hour usage, weekly usage, credits, and reset credits | Writes `~/.codex/auth.json`, then opens Codex |
+| Codex | Plan, 5-hour usage, weekly usage, credits, and reset credits | Writes `~/.codex/auth.json`, then opens ChatGPT |
 | Antigravity | Gemini and Claude/GPT 5-hour and weekly usage | Writes the active session to macOS Keychain, then opens Antigravity |
 
 ## Requirements
 
 - macOS 14 Sonoma or later
+- ChatGPT desktop app or Codex CLI installed
 - Swift 5.9 or later, only when building from source
 
 ## Installation
@@ -88,13 +89,13 @@ swift run LimitBank
 
 1. Open **Settings** from the LimitBank menu.
 2. Add or select a Codex account.
-3. Click **Login, Import & Save** to run the Codex CLI login flow and save the account to LimitBank.
+3. Click **Sign in with ChatGPT & Save** to run the official Codex CLI browser flow and save the account to LimitBank.
 4. Repeat for each Codex account you want to store.
 5. Click **Activate Codex Session** when you want to switch the active Codex account.
 
-When activating a Codex account, LimitBank closes Codex if it is running, refreshes the saved session, writes `~/.codex/auth.json`, and opens Codex again after the account is ready.
+During Quick Setup, LimitBank closes ChatGPT before replacing the Codex login cache, saves the authenticated account, and restores the previous cache if sign-in fails. When activating a saved account, LimitBank closes ChatGPT, refreshes the selected session, writes a complete ChatGPT-mode `~/.codex/auth.json`, and opens ChatGPT again after the account is ready.
 
-Tip: avoid signing out inside Codex if you want LimitBank to keep the saved session intact. Use **Activate Codex Session** to switch accounts instead.
+Tip: avoid signing out inside ChatGPT if you want LimitBank to keep the saved Codex session intact. Use **Activate Codex Session** to switch accounts instead.
 
 ### Antigravity
 
@@ -122,7 +123,7 @@ LimitBank is local-first. It does not run a backend server and does not send you
 Data is stored in these local locations:
 
 - `~/.limitbank.json`: LimitBank account bank and saved sessions.
-- `~/.codex/auth.json`: active Codex session written during Codex activation.
+- `${CODEX_HOME}/auth.json` (normally `~/.codex/auth.json`): active Codex session written during Codex activation.
 - macOS Keychain: active Antigravity session written during Antigravity activation.
 
 Treat `~/.limitbank.json` as sensitive because it contains saved account session data.
@@ -132,7 +133,7 @@ Treat `~/.limitbank.json` as sensitive because it contains saved account session
 | Problem | What to Try |
 | --- | --- |
 | Codex quota briefly shows a timeout | This is usually a temporary `chatgpt.com` quota API timeout. LimitBank retries automatically and preserves the last valid quota when possible. |
-| Account did not switch immediately | Use **Activate Codex Session** or **Activate Antigravity Session**. LimitBank needs to close the target app before writing the active session. |
+| Codex account did not switch immediately | Quit older Codex builds if they are still running, then use **Activate Codex Session**. Current releases are reopened as the ChatGPT desktop app. |
 | Google login page says login succeeded | Close the browser tab and return to LimitBank Settings. LimitBank will show a success message after the account is saved. |
 | macOS blocks the app | Right-click `LimitBank.app`, choose **Open**, then confirm the security prompt. |
 | OAuth callback fails | Make sure local port `12111` is not being used by another process, then try the login flow again. |

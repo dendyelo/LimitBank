@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "LimitBank",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "LimitBankTests",
+            dependencies: ["LimitBank"],
+            path: "Tests/LimitBankTests"
         )
     ]
 )
